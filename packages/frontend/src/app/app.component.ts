@@ -8,7 +8,6 @@ import { APP_VERSION } from './app-version';
 import { HttpClientModule } from '@angular/common/http';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
 import { AuthService, TechnicianSession } from './services/auth.service';
-import { TechnicianPresenceService } from './services/technician-presence.service';
 import { Task, WorkOrder, WorkOrderService } from './services/work-order.service';
 import { Subscription } from 'rxjs';
 
@@ -78,20 +77,6 @@ type AssignedTask = {
             <div class="metric-card">
               <span class="metric-value">{{ dashboardStats.interventions }}</span>
               <span class="metric-label">Interventi totali</span>
-            </div>
-            <div class="metric-card accent">
-              <ng-container *ngIf="technicianSnapshot$ | async as techSnapshot; else fallbackTech">
-                <span class="metric-value">{{ techSnapshot.techniciansOnline }}</span>
-                <span class="metric-label">Tecnici online (live)</span>
-                <span class="metric-support">
-                  {{ techSnapshot.active.length }} attivi · {{ techSnapshot.updatedAt | date: 'shortTime' }}
-                </span>
-              </ng-container>
-              <ng-template #fallbackTech>
-                <span class="metric-value">{{ dashboardStats.techniciansOnline }}</span>
-                <span class="metric-label">Tecnici online (stima)</span>
-                <span class="metric-support">Aggiornamento iniziale in corso</span>
-              </ng-template>
             </div>
             <div class="metric-card">
               <span class="metric-value">{{ dashboardStats.shiftsCompleted }}</span>
@@ -755,8 +740,6 @@ export class AppComponent implements OnInit, OnDestroy {
   private dashboardService = inject(DashboardService);
   private authService = inject(AuthService);
   private workOrderService = inject(WorkOrderService);
-  private technicianPresenceService = inject(TechnicianPresenceService);
-  technicianSnapshot$ = this.technicianPresenceService.snapshot$.asObservable();
   private router = inject(Router);
   private assignedTasksSub?: Subscription;
   private workOrdersSnapshot: WorkOrder[] = [];
