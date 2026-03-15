@@ -169,6 +169,9 @@ import { Technician, TechnicianService } from '../../services/technician.service
         cursor: pointer;
         transition: border-color 0.2s ease, transform 0.2s ease;
         box-shadow: 0 15px 30px rgba(3, 7, 18, 0.6);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
       }
 
       .order-card:hover {
@@ -186,6 +189,8 @@ import { Technician, TechnicianService } from '../../services/technician.service
         justify-content: space-between;
         align-items: center;
         margin-bottom: 6px;
+        gap: 12px;
+        flex-wrap: wrap;
       }
 
       .order-title {
@@ -221,6 +226,10 @@ import { Technician, TechnicianService } from '../../services/technician.service
         font-size: 12px;
         color: var(--text-secondary);
         margin-bottom: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 8px;
       }
 
       .order-created {
@@ -234,6 +243,7 @@ import { Technician, TechnicianService } from '../../services/technician.service
         justify-content: space-between;
         align-items: center;
         gap: 12px;
+        flex-wrap: wrap;
       }
 
       .order-assignment {

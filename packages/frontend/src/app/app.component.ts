@@ -61,20 +61,18 @@ type AssignedTask = {
         </div>
       </header>
 
-      <section class="hero-strip">
+      <section class="hero-strip" *ngIf="viewMode !== 'tecnico'">
         <div class="hero-strip-top">
           <div class="hero-copy">
             <p class="hero-label">Dashboard Operativa</p>
             <h1>ETR700-12 • Turno Mattina</h1>
-            <p class="hero-subtitle">
-              {{
-                viewMode === 'capoturno'
-                  ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
-                  : viewMode === 'tecnico'
-                  ? 'Tecnico collegato · inserisci credenziali per accedere'
-                  : 'Admin view · aggiorna i tecnici e i parametri operativi'
-              }}
-            </p>
+              <p class="hero-subtitle">
+                {{
+                  viewMode === 'capoturno'
+                    ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
+                    : 'Admin view · aggiorna i tecnici e i parametri operativi'
+                }}
+              </p>
           </div>
           <div class="hero-metrics">
             <div class="metric-card">
@@ -396,11 +394,13 @@ type AssignedTask = {
         justify-content: center;
         min-height: calc(100vh - 200px);
         padding: 0 24px;
+        width: 100%;
       }
 
       .panel-shell {
         flex: 1;
-        max-width: 960px;
+        width: 100%;
+        max-width: none;
         background: rgba(12, 14, 28, 0.95);
         padding: 32px;
         border-radius: 28px;
@@ -761,14 +761,25 @@ export class AppComponent implements OnInit, OnDestroy {
   private assignedTasksSub?: Subscription;
   private workOrdersSnapshot: WorkOrder[] = [];
   private readonly technicianStorageKey = 'rail-service.tech-session';
+  private readonly viewModeStorageKey = 'rail-service.view-mode';
 
   setView(mode: 'capoturno' | 'tecnico' | 'admin'): void {
+    this.applyViewMode(mode);
+  }
+
+  private applyViewMode(
+    mode: 'capoturno' | 'tecnico' | 'admin',
+    options?: { persist?: boolean; skipRouter?: boolean },
+  ): void {
     this.viewMode = mode;
     this.loginState = null;
     if (mode !== 'tecnico') {
       this.clearTechnicianSession();
     }
-    if (mode !== 'admin') {
+    if (options?.persist !== false) {
+      this.persistViewMode(mode);
+    }
+    if (options?.skipRouter !== true && mode !== 'admin') {
       this.router.navigateByUrl('/');
     }
   }
@@ -823,6 +834,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.restoreViewMode();
     this.loadDashboardStats();
     this.restoreTechnicianSession();
   }
@@ -942,6 +954,32 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     window.localStorage.removeItem(this.technicianStorageKey);
+  }
+
+  private restoreViewMode(): void {
+    const stored = this.readStoredViewMode();
+    if (!stored) {
+      return;
+    }
+    this.applyViewMode(stored, { persist: false, skipRouter: true });
+  }
+
+  private persistViewMode(mode: 'capoturno' | 'tecnico' | 'admin'): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(this.viewModeStorageKey, mode);
+  }
+
+  private readStoredViewMode(): 'capoturno' | 'tecnico' | 'admin' | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const stored = window.localStorage.getItem(this.viewModeStorageKey);
+    if (stored === 'capoturno' || stored === 'tecnico' || stored === 'admin') {
+      return stored;
+    }
+    return null;
   }
 
   ngOnDestroy(): void {
