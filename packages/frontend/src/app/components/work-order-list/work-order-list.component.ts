@@ -21,23 +21,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
           <span class="orders-count">{{ workOrders.length }} elementi</span>
         </div>
 
-        <div class="header-controls">
-          <input
-            class="search-field"
-            type="search"
-            placeholder="Cerca codice, treno o turno"
-            [(ngModel)]="searchTerm"
-            (ngModelChange)="updateSearchTerm($event)"
-          />
-            <label class="completed-toggle">
-              <input
-                type="checkbox"
-                [checked]="showCompletedOrders"
-                (change)="toggleShowCompletedOrders($any($event.target).checked)"
-              />
-              <span>Mostra ODL completati</span>
-            </label>
-        </div>
 
         <div class="new-order-section">
           <input
@@ -54,6 +37,24 @@ import { Technician, TechnicianService } from '../../services/technician.service
           <button (click)="createOrder()" class="btn-create" [disabled]="creatingOrder">
             {{ creatingOrder ? 'Creazione...' : 'Nuovo +' }}
           </button>
+        </div>
+
+        <div class="header-controls">
+          <input
+            class="search-field"
+            type="search"
+            placeholder="Cerca codice, treno o turno"
+            [(ngModel)]="searchTerm"
+            (ngModelChange)="updateSearchTerm($event)"
+          />
+          <label class="completed-toggle">
+            <input
+              type="checkbox"
+              [checked]="showCompletedOrders"
+              (change)="toggleShowCompletedOrders($any($event.target).checked)"
+            />
+            <span>Mostra ODL completati</span>
+          </label>
         </div>
 
         <div *ngIf="workOrders.length > 0; else emptyState" class="orders-list">
