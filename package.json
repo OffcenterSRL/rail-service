@@ -5,7 +5,7 @@
   "scripts": {
     "dev:frontend": "npm --prefix packages/frontend run dev",
     "dev:backend": "npm --prefix packages/backend run dev",
-    "deploy:caprover": "npm --prefix packages/frontend run build && tar -czf deploy.tar -C packages/frontend dist captain-definition && npx caprover deploy -t ./deploy.tar -n notify -a rail-service-client && rm -f deploy.tar"
+    "deploy:frontend": "npm --prefix packages/frontend run build && tar -czf deploy.tar -C packages/frontend dist captain-definition && npx caprover deploy -t ./deploy.tar -n notify -a rail-service-client && rm -f deploy.tar"
   },
   "private": true,
   "dependencies": {},
