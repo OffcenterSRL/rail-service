@@ -7,9 +7,9 @@ import { CommonModule } from '@angular/common';
   imports: [CommonModule],
   template: `
     <div class="tickets">
-      <h2>My Tickets</h2>
+      <h2>Miei Biglietti</h2>
       <div class="tickets-list">
-        <p class="empty-message">No tickets found</p>
+        <p class="empty-message">Nessun biglietto trovato</p>
       </div>
     </div>
   `,
@@ -24,8 +24,15 @@ import { CommonModule } from '@angular/common';
 
     .empty-message {
       text-align: center;
-      color: #999;
+      color: var(--text-secondary);
       padding: 40px 20px;
+      font-size: 14px;
+    }
+
+    h2 {
+      font-size: 24px;
+      margin: 0 0 16px 0;
+      font-weight: 600;
     }
   `]
 })
