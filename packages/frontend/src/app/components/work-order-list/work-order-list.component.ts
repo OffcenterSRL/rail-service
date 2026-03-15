@@ -32,12 +32,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
               {{ option }}
             </option>
           </select>
-          <select [(ngModel)]="selectedTechnicianId" class="select-field">
-            <option value="">Assegna tecnico</option>
-            <option *ngFor="let tech of technicians$ | async" [value]="tech.id">
-              {{ tech.nickname || tech.name }} · {{ tech.matricola }}
-            </option>
-          </select>
           <button (click)="createOrder()" class="btn-create" [disabled]="creatingOrder">
             {{ creatingOrder ? 'Creazione...' : 'Nuovo +' }}
           </button>
@@ -63,13 +57,10 @@ import { Technician, TechnicianService } from '../../services/technician.service
               </div>
             </div>
             <div class="order-footer">
-              <div class="order-assignment">
-                {{ order.assignedTechnician ?? 'Tecnico da assegnare' }}
-              </div>
-              <div class="order-meta">
-                <span>{{ order.tasks.length }} lavorazioni</span>
-                <span>{{ order.shift }}</span>
-              </div>
+            <div class="order-meta">
+              <span>{{ order.tasks.length }} lavorazioni</span>
+              <span>{{ order.shift }}</span>
+            </div>
             </div>
           </div>
         </div>
@@ -313,7 +304,6 @@ export class WorkOrderListComponent implements OnInit {
     'Notte (22-06)',
   ];
   creatingOrder = false;
-  selectedTechnicianId = '';
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
   private technicianService = inject(TechnicianService);

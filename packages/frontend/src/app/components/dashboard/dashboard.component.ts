@@ -56,10 +56,6 @@ import {
               <span class="status-pill" [ngClass]="selectedOrder.status">{{ selectedOrder.status | titlecase }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Tecnico</span>
-              <span class="meta-value">{{ selectedOrder.assignedTechnician || 'Non assegnato' }}</span>
-            </div>
-            <div class="meta-item">
               <span class="meta-label">Creato il</span>
               <span class="meta-value">{{ selectedOrder.createdAt | date: 'short' }}</span>
             </div>
