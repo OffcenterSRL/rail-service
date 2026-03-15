@@ -4,7 +4,8 @@
   "license": "MIT",
   "scripts": {
     "dev:frontend": "npm --prefix packages/frontend run dev",
-    "dev:backend": "npm --prefix packages/backend run dev"
+    "dev:backend": "npm --prefix packages/backend run dev",
+    "deploy:caprover": "npm --prefix packages/frontend run build && cd packages/frontend && npx caprover deploy --caproverUrl https://captain.notify --appName rail-service-client"
   },
   "private": true,
   "dependencies": {},
