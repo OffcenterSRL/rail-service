@@ -1,886 +1,1119 @@
-<!DOCTYPE html>
-<html lang="it">
-
-<head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js"
-    integrity="sha512-iZ2ORl595Wx6miw+GuadDet4WQbdSWS3JLMoNfY8cRGoEFy6oT3G9IbcrBeL6AfkgpA51ETt/faX6yLV+/gFJg=="
-    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script> (function () { const originalConsole = window.console; window.console = { log: (...args) => { originalConsole.log(...args); window.parent.postMessage({ type: 'console', message: args.join(' ') }, '*'); }, error: (...args) => { originalConsole.error(...args); window.parent.postMessage({ type: 'console', message: 'Error: ' + args.join(' ') }, '*'); }, warn: (...args) => { originalConsole.warn(...args); window.parent.postMessage({ type: 'console', message: 'Warning: ' + args.join(' ') }, '*'); } }; let requestId = 0; let callbacksMap = new Map(); let streamControllers = new Map(); window.claude = { complete: (prompt) => { return new Promise((resolve, reject) => { const id = requestId++; callbacksMap.set(id, { resolve, reject }); window.parent.postMessage({ type: 'claudeComplete', id, prompt }, '*'); }); } }; window.storage = { get: (key, shared = false) => { return new Promise((resolve, reject) => { const id = requestId++; callbacksMap.set(id, { resolve, reject }); window.parent.postMessage({ type: 'storageGet', id, key, shared }, '*'); }); }, set: (key, value, shared = false) => { return new Promise((resolve, reject) => { const id = requestId++; callbacksMap.set(id, { resolve, reject }); window.parent.postMessage({ type: 'storageSet', id, key, value, shared }, '*'); }); }, delete: (key, shared = false) => { return new Promise((resolve, reject) => { const id = requestId++; callbacksMap.set(id, { resolve, reject }); window.parent.postMessage({ type: 'storageDelete', id, key, shared }, '*'); }); }, list: (prefix, shared = false) => { return new Promise((resolve, reject) => { const id = requestId++; callbacksMap.set(id, { resolve, reject }); window.parent.postMessage({ type: 'storageList', id, prefix, shared }, '*'); }); } }; let pendingBlobs = new Map(); URL.createObjectURL = (blob) => { // Store the blob and create an ID and URL for it const blobId = `blob-${Date.now()}-${Math.random()}`; pendingBlobs.set(blobId, blob); return `blob-request://${blobId}`; }; URL.revokeObjectURL = (url) => { // Remove the blob from our store const blobId = url.replace("blob-request://", ""); pendingBlobs.delete(blobId); }; const getBlobFromURL = (url) => { const blobId = url.replace("blob-request://", ""); return pendingBlobs.get(blobId); }; // Override global fetch with streaming support window.fetch = (url, init = {}) => { return new Promise((resolve, reject) => { const id = requestId++; const channelId = `fetch-${id}-${Date.now()}`; callbacksMap.set(id, { resolve: (response) => { // Create a ReadableStream for the response body const stream = new ReadableStream({ start(controller) { streamControllers.set(channelId, controller); }, cancel() { streamControllers.delete(channelId); } }); // Create and return the Response with the stream resolve(new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers })); }, reject, channelId }); window.parent.postMessage({ type: 'proxyFetch', id, url, init, channelId }, '*'); }); }; window.addEventListener('message', async (event) => { if (event.data.type === 'takeScreenshot') { const rootElement = document.getElementById('artifacts-component-root-html'); if (!rootElement) { window.parent.postMessage({ type: 'screenshotError', error: new Error('Root element not found'), }, '*'); } const screenshot = await htmlToImage.toPng(rootElement, { imagePlaceholder: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdjePDgwX8ACOQDoNsk0PMAAAAASUVORK5CYII=", }); window.parent.postMessage({ type: 'screenshotData', data: screenshot, }, '*'); } else if (event.data.type === 'claudeComplete') { const callback = callbacksMap.get(event.data.id); if (event.data.error) { callback.reject(new Error(event.data.error)); } else { callback.resolve(event.data.completion); } callbacksMap.delete(event.data.id); } else if (event.data.type === 'proxyFetchResponse') { const callback = callbacksMap.get(event.data.id); if (event.data.error) { callback.reject(new Error(event.data.error)); callbacksMap.delete(event.data.id); } else { // Initial response with headers, status, etc. callback.resolve({ status: event.data.status, statusText: event.data.statusText, headers: event.data.headers }); // Don't delete the callback yet if streaming if (!event.data.body) { callbacksMap.delete(event.data.id); } } } else if (event.data.type === 'proxyFetchStream') { // Handle streaming data chunks const controller = streamControllers.get(event.data.channelId); if (controller) { if (event.data.error) { controller.error(new Error(event.data.error)); streamControllers.delete(event.data.channelId); } else if (event.data.done) { controller.close(); streamControllers.delete(event.data.channelId); // Clean up the callback const callback = Array.from(callbacksMap.entries()).find( ([_, value]) => value.channelId === event.data.channelId ); if (callback) { callbacksMap.delete(callback[0]); } } else if (event.data.chunk) { controller.enqueue(new Uint8Array(event.data.chunk)); } } } else if (event.data.type === 'storageGet') { const callback = callbacksMap.get(event.data.id); if (event.data.error) { callback.reject(new Error(event.data.error)); } else { callback.resolve(event.data.result); } callbacksMap.delete(event.data.id); } else if (event.data.type === 'storageSet') { const callback = callbacksMap.get(event.data.id); if (event.data.error) { callback.reject(new Error(event.data.error)); } else { callback.resolve(event.data.result); } callbacksMap.delete(event.data.id); } else if (event.data.type === 'storageDelete') { const callback = callbacksMap.get(event.data.id); if (event.data.error) { callback.reject(new Error(event.data.error)); } else { callback.resolve(event.data.result); } callbacksMap.delete(event.data.id); } else if (event.data.type === 'storageList') { const callback = callbacksMap.get(event.data.id); if (event.data.error) { callback.reject(new Error(event.data.error)); } else { callback.resolve(event.data.result); } callbacksMap.delete(event.data.id); } }); window.addEventListener('click', (event) => { const isEl = event.target instanceof HTMLElement; if (!isEl) return; // find ancestor links const linkEl = event.target.closest("a"); if (!linkEl || !linkEl.href) return; event.preventDefault(); event.stopImmediatePropagation(); if (linkEl.href.startsWith("blob-request:")) { const blob = getBlobFromURL(linkEl.href); if (!blob) return; void blob.arrayBuffer().then((data) => { window.parent.postMessage({ type: "downloadFile", filename: linkEl.download, data, mimeType: blob.type || "application/octet-stream", }); }); } else if (linkEl.href.startsWith("data:")) { const [header, base64Data] = linkEl.href.split(","); const mimeMatch = header.match(/data:([^;]+)/); const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream"; const binaryString = atob(base64Data); const data = Uint8Array.from(binaryString, (c) => c.charCodeAt(0), ).buffer; window.parent.postMessage({ type: "downloadFile", filename: linkEl.download, data, mimeType, }); } else { let linkUrl; try { linkUrl = new URL(linkEl.href); } catch (error) { return; } if (linkUrl.hostname === window.location.hostname) return; window.parent.postMessage({ type: 'openExternal', href: linkEl.href, }, '*'); } }); const originalOpen = window.open; window.open = function (url) { window.parent.postMessage({ type: "openExternal", href: url, }, "*"); }; window.addEventListener('error', (event) => { window.parent.postMessage({ type: 'console', message: 'Uncaught Error: ' + event.message }, '*'); }); })(); </script>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HMU Service — Gestione Lavorazioni</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
-
-    :root {
-      --bg: #0a0e14;
-      --surface: #111720;
-      --surface2: #1a2333;
-      --border: #1e2d42;
-      --accent: #e8441a;
-      --accent2: #f5a623;
-      --blue: #2d7dd2;
-      --green: #2ecc71;
-      --text: #e8edf2;
-      --text2: #7a8fa6;
-      --red: #e84040;
-      --mono: 'DM Mono', monospace;
-      --sans: 'Syne', sans-serif;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      min-height: 100vh;
-    }
-
-    /* ── HEADER ── */
-    header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 0 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 60px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 15px;
-      font-weight: 800;
-      letter-spacing: .5px;
-    }
-
-    .logo-icon {
-      width: 30px;
-      height: 30px;
-      background: var(--accent);
-      clip-path: polygon(0 0, 100% 0, 100% 70%, 70% 100%, 0 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-    }
-
-    .logo span {
-      color: var(--accent);
-    }
-
-    .header-right {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .mode-badge {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-family: var(--mono);
-      cursor: pointer;
-      transition: all .2s;
-    }
-
-    .mode-badge:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .mode-badge.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-
-    /* ── VIEWS ── */
-    .view {
-      display: none;
-    }
-
-    .view.active {
-      display: block;
-    }
-
-    /* ── CAPOTURNO VIEW ── */
-    .ct-layout {
-      display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 0;
-      height: calc(100vh - 60px);
-    }
-
-    /* Sidebar */
-    .sidebar {
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .sidebar-header {
-      padding: 20px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .sidebar-header h2 {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--text2);
-      margin-bottom: 14px;
-    }
-
-    .input-row {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    input[type=text],
-    input[type=number],
-    textarea,
-    select {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 13px;
-      padding: 9px 12px;
-      border-radius: 6px;
-      outline: none;
-      width: 100%;
-      transition: border-color .2s;
-    }
-
-    input:focus,
-    textarea:focus,
-    select:focus {
-      border-color: var(--accent);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 60px;
-    }
-
-    select option {
-      background: var(--surface);
-    }
-
-    .btn {
-      padding: 9px 16px;
-      border-radius: 6px;
-      border: none;
-      cursor: pointer;
-      font-family: var(--sans);
-      font-size: 13px;
-      font-weight: 700;
-      transition: all .15s;
-      white-space: nowrap;
-    }
-
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-    }
-
-    .btn-primary:hover {
-      background: #d03a14;
-    }
-
-    .btn-secondary {
-      background: var(--surface2);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-
-    .btn-secondary:hover {
-      border-color: var(--text2);
-    }
-
-    .btn-sm {
-      padding: 5px 10px;
-      font-size: 12px;
-    }
-
-    .btn-blue {
-      background: var(--blue);
-      color: #fff;
-    }
-
-    .btn-blue:hover {
-      background: #2369b8;
-    }
-
-    .btn-green {
-      background: var(--green);
-      color: #000;
-    }
-
-    /* Train list */
-    .train-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-
-    .train-card {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: all .15s;
-      position: relative;
-    }
-
-    .train-card:hover,
-    .train-card.selected {
-      border-color: var(--accent);
-    }
-
-    .train-card.selected {
-      background: rgba(232, 68, 26, .08);
-    }
-
-    .train-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .train-id {
-      font-size: 16px;
-      font-weight: 800;
-      font-family: var(--mono);
-    }
-
-    .train-progress {
-      font-size: 12px;
-      color: var(--text2);
-      font-family: var(--mono);
-    }
-
-    .progress-bar {
-      height: 3px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: var(--accent);
-      transition: width .3s;
-      border-radius: 2px;
-    }
-
-    .progress-fill.complete {
-      background: var(--green);
-    }
-
-    /* Main panel */
-    .main-panel {
-      overflow-y: auto;
-      padding: 24px;
-    }
-
-    .panel-empty {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: var(--text2);
-      gap: 12px;
-    }
-
-    .panel-empty .big-icon {
-      font-size: 48px;
-      opacity: .3;
-    }
-
-    .panel-empty p {
-      font-family: var(--mono);
-      font-size: 13px;
-    }
-
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 20px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .panel-title {
-      font-size: 24px;
-      font-weight: 800;
-    }
-
-    .panel-meta {
-      font-size: 13px;
-      color: var(--text2);
-      font-family: var(--mono);
-      margin-top: 4px;
-    }
-
-    /* Stats row */
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      color: var(--text2);
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      font-family: var(--mono);
-      margin-bottom: 6px;
-    }
-
-    .stat-value {
-      font-size: 22px;
-      font-weight: 800;
-    }
-
-    .stat-value.green {
-      color: var(--green);
-    }
-
-    .stat-value.orange {
-      color: var(--accent2);
-    }
-
-    .stat-value.red {
-      color: var(--red);
-    }
-
-    .stat-value.blue {
-      color: var(--blue);
-    }
-
-    /* Add lavorazione form */
-    .add-lav-form {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 20px;
-    }
-
-    .add-lav-form h3 {
-      font-size: 12px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--text2);
-      margin-bottom: 12px;
-      font-family: var(--mono);
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
-      gap: 8px;
-      align-items: end;
-    }
-
-    /* Lavorazioni table */
-    .lav-section h3 {
-      font-size: 12px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--text2);
-      margin-bottom: 12px;
-      font-family: var(--mono);
-    }
-
-    .lav-item {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 8px;
-      transition: border-color .15s;
-    }
-
-    .lav-item.done {
-      border-color: rgba(46, 204, 113, .3);
-      background: rgba(46, 204, 113, .04);
-    }
-
-    .lav-item.partial {
-      border-color: rgba(245, 166, 35, .3);
-      background: rgba(245, 166, 35, .04);
-    }
-
-    .lav-item.waiting {
-      border-color: rgba(232, 64, 64, .3);
-      background: rgba(232, 64, 64, .04);
-    }
-
-    .lav-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .lav-title {
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .lav-meta {
-      font-size: 12px;
-      color: var(--text2);
-      font-family: var(--mono);
-      margin-top: 4px;
-    }
-
-    .status-pill {
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 700;
-      font-family: var(--mono);
-      letter-spacing: .5px;
-    }
-
-    .pill-open {
-      background: rgba(122, 143, 166, .15);
-      color: var(--text2);
-    }
-
-    .pill-done {
-      background: rgba(46, 204, 113, .15);
-      color: var(--green);
-    }
-
-    .pill-partial {
-      background: rgba(245, 166, 35, .15);
-      color: var(--accent2);
-    }
-
-    .pill-waiting {
-      background: rgba(232, 64, 64, .15);
-      color: var(--red);
-    }
-
-    .lav-details {
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      font-size: 13px;
-      font-family: var(--mono);
-    }
-
-    .lav-details .detail-item {
-      color: var(--text2);
-    }
-
-    .lav-details .detail-item span {
-      color: var(--text);
-    }
-
-    .lav-details.full {
-      grid-template-columns: 1fr;
-    }
-
-    /* Link section */
-    .link-box {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px 14px;
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--blue);
-      word-break: break-all;
-      margin-top: 8px;
-    }
-
-    /* Export panel */
-    .export-area {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-      margin-top: 16px;
-      font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.8;
-      white-space: pre-wrap;
-      color: var(--text2);
-      max-height: 300px;
-      overflow-y: auto;
-    }
-
-    /* ── TECNICO VIEW ── */
-    .tec-layout {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 20px 16px;
-    }
-
-    .tec-header {
-      text-align: center;
-      padding: 24px 0 20px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 20px;
-    }
-
-    .tec-header .train-big {
-      font-size: 32px;
-      font-weight: 800;
-      font-family: var(--mono);
-    }
-
-    .tec-header .tec-sub {
-      font-size: 13px;
-      color: var(--text2);
-      margin-top: 4px;
-    }
-
-    .tec-lav {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 18px;
-      margin-bottom: 14px;
-    }
-
-    .tec-lav-title {
-      font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-
-    .tec-lav-type {
-      font-size: 11px;
-      font-family: var(--mono);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      color: var(--text2);
-      margin-bottom: 14px;
-    }
-
-    .field-label {
-      font-size: 12px;
-      color: var(--text2);
-      font-family: var(--mono);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 6px;
-      margin-top: 12px;
-    }
-
-    .time-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .mat-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr auto;
-      gap: 6px;
-      align-items: center;
-      margin-bottom: 6px;
-    }
-
-    .mat-list {
-      margin-bottom: 8px;
-    }
-
-    .btn-icon {
-      width: 32px;
-      height: 32px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      transition: all .15s;
-    }
-
-    .btn-icon:hover {
-      border-color: var(--red);
-      color: var(--red);
-    }
-
-    .esito-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 8px;
-      margin-top: 6px;
-    }
-
-    .esito-btn {
-      padding: 10px;
-      border-radius: 8px;
-      border: 2px solid var(--border);
-      background: transparent;
-      color: var(--text2);
-      cursor: pointer;
-      font-family: var(--sans);
-      font-size: 12px;
-      font-weight: 700;
-      text-align: center;
-      transition: all .15s;
-    }
-
-    .esito-btn.sel-risolto {
-      border-color: var(--green);
-      color: var(--green);
-      background: rgba(46, 204, 113, .1);
-    }
-
-    .esito-btn.sel-parziale {
-      border-color: var(--accent2);
-      color: var(--accent2);
-      background: rgba(245, 166, 35, .1);
-    }
-
-    .esito-btn.sel-attesa {
-      border-color: var(--red);
-      color: var(--red);
-      background: rgba(232, 64, 64, .1);
-    }
-
-    .tec-submit-btn {
-      width: 100%;
-      padding: 16px;
-      margin-top: 8px;
-      background: var(--accent);
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      font-family: var(--sans);
-      font-size: 15px;
-      font-weight: 800;
-      cursor: pointer;
-      transition: all .15s;
-    }
-
-    .tec-submit-btn:hover {
-      background: #d03a14;
-    }
-
-    .tec-submit-btn:disabled {
-      background: var(--border);
-      cursor: not-allowed;
-      color: var(--text2);
-    }
-
-    .done-banner {
-      background: rgba(46, 204, 113, .1);
-      border: 1px solid var(--green);
-      border-radius: 8px;
-      padding: 14px;
-      text-align: center;
-      color: var(--green);
-      font-weight: 700;
-      font-size: 14px;
-      margin-bottom: 14px;
-    }
-
-    /* Tecnico login */
-    .tec-login {
-      max-width: 380px;
-      margin: 60px auto;
-      padding: 0 16px;
-    }
-
-    .login-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 28px;
-    }
-
-    .login-card h2 {
-      font-size: 18px;
-      font-weight: 800;
-      margin-bottom: 4px;
-    }
-
-    .login-card p {
-      font-size: 13px;
-      color: var(--text2);
-      margin-bottom: 20px;
-    }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 18px;
-      font-size: 13px;
-      font-family: var(--mono);
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all .3s;
-      pointer-events: none;
-      z-index: 999;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .toast.success {
-      border-color: var(--green);
-      color: var(--green);
-    }
-
-    .toast.error {
-      border-color: var(--red);
-      color: var(--red);
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
-
-    label.field-label-inline {
-      font-size: 13px;
-      color: var(--text2);
-    }
-
-    .divider {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin: 16px 0;
-    }
-
-    @media (max-width: 700px) {
-      .ct-layout {
-        grid-template-columns: 1fr;
-      }
-
-      .sidebar {
-        height: auto;
-        max-height: 40vh;
-      }
-
-      .stats-row {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .form-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-    }
-  </style>
+<html lang="it"><head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js" integrity="sha512-iZ2ORl595Wx6miw+GuadDet4WQbdSWS3JLMoNfY8cRGoEFy6oT3G9IbcrBeL6AfkgpA51ETt/faX6yLV+/gFJg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+      (function() {
+        const originalConsole = window.console;
+        window.console = {
+          log: (...args) => {
+            originalConsole.log(...args);
+            window.parent.postMessage({ type: 'console', message: args.join(' ') }, '*');
+          },
+          error: (...args) => {
+            originalConsole.error(...args);
+            window.parent.postMessage({ type: 'console', message: 'Error: ' + args.join(' ') }, '*');
+          },
+          warn: (...args) => {
+            originalConsole.warn(...args);
+            window.parent.postMessage({ type: 'console', message: 'Warning: ' + args.join(' ') }, '*');
+          }
+        };
+
+        let requestId = 0;
+        let callbacksMap = new Map();
+        let streamControllers = new Map();
+        
+        window.claude = {
+          complete: (prompt) => {
+            return new Promise((resolve, reject) => {
+              const id = requestId++;
+              callbacksMap.set(id, { resolve, reject });
+              window.parent.postMessage({ type: 'claudeComplete', id, prompt }, '*');
+            });
+          }
+        };
+
+        window.storage = {
+          get: (key, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = requestId++;
+              callbacksMap.set(id, { resolve, reject });
+              window.parent.postMessage({ type: 'storageGet', id, key, shared }, '*');
+            });
+          },
+          set: (key, value, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = requestId++;
+              callbacksMap.set(id, { resolve, reject });
+              window.parent.postMessage({ type: 'storageSet', id, key, value, shared }, '*');
+            });
+          },
+          delete: (key, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = requestId++;
+              callbacksMap.set(id, { resolve, reject });
+              window.parent.postMessage({ type: 'storageDelete', id, key, shared }, '*');
+            });
+          },
+          list: (prefix, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = requestId++;
+              callbacksMap.set(id, { resolve, reject });
+              window.parent.postMessage({ type: 'storageList', id, prefix, shared }, '*');
+            });
+          }
+        };
+
+        let pendingBlobs = new Map();
+        URL.createObjectURL = (blob) => {
+          // Store the blob and create an ID and URL for it
+          const blobId = `blob-${Date.now()}-${Math.random()}`;
+          pendingBlobs.set(blobId, blob);
+          return `blob-request://${blobId}`;
+        };
+
+        URL.revokeObjectURL = (url) => {
+          // Remove the blob from our store
+          const blobId = url.replace("blob-request://", "");
+          pendingBlobs.delete(blobId);
+        };
+
+        const getBlobFromURL = (url) => {
+          const blobId = url.replace("blob-request://", "");
+          return pendingBlobs.get(blobId);
+        };
+
+        // Override global fetch with streaming support
+        window.fetch = (url, init = {}) => {
+          return new Promise((resolve, reject) => {
+            const id = requestId++;
+            const channelId = `fetch-${id}-${Date.now()}`;
+            
+            callbacksMap.set(id, { 
+              resolve: (response) => {
+                // Create a ReadableStream for the response body
+                const stream = new ReadableStream({
+                  start(controller) {
+                    streamControllers.set(channelId, controller);
+                  },
+                  cancel() {
+                    streamControllers.delete(channelId);
+                  }
+                });
+                
+                // Create and return the Response with the stream
+                resolve(new Response(stream, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers
+                }));
+              },
+              reject,
+              channelId
+            });
+            
+            window.parent.postMessage({
+              type: 'proxyFetch',
+              id,
+              url,
+              init,
+              channelId
+            }, '*');
+          });
+        };
+
+        window.addEventListener('message', async (event) => {
+          if (event.data.type === 'takeScreenshot') {
+            const rootElement = document.getElementById('artifacts-component-root-html');
+            if (!rootElement) {
+              window.parent.postMessage({
+                type: 'screenshotError',
+                error: new Error('Root element not found'),
+              }, '*');
+            }
+            const screenshot = await htmlToImage.toPng(rootElement, {
+              imagePlaceholder:
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdjePDgwX8ACOQDoNsk0PMAAAAASUVORK5CYII=",
+            });
+            window.parent.postMessage({
+              type: 'screenshotData',
+              data: screenshot,
+            }, '*');
+          } else if (event.data.type === 'claudeComplete') {
+            const callback = callbacksMap.get(event.data.id);
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.completion);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'proxyFetchResponse') {
+            const callback = callbacksMap.get(event.data.id);
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+              callbacksMap.delete(event.data.id);
+            } else {
+              // Initial response with headers, status, etc.
+              callback.resolve({
+                status: event.data.status,
+                statusText: event.data.statusText,
+                headers: event.data.headers
+              });
+              // Don't delete the callback yet if streaming
+              if (!event.data.body) {
+                callbacksMap.delete(event.data.id);
+              }
+            }
+          } else if (event.data.type === 'proxyFetchStream') {
+            // Handle streaming data chunks
+            const controller = streamControllers.get(event.data.channelId);
+            if (controller) {
+              if (event.data.error) {
+                controller.error(new Error(event.data.error));
+                streamControllers.delete(event.data.channelId);
+              } else if (event.data.done) {
+                controller.close();
+                streamControllers.delete(event.data.channelId);
+                // Clean up the callback
+                const callback = Array.from(callbacksMap.entries()).find(
+                  ([_, value]) => value.channelId === event.data.channelId
+                );
+                if (callback) {
+                  callbacksMap.delete(callback[0]);
+                }
+              } else if (event.data.chunk) {
+                controller.enqueue(new Uint8Array(event.data.chunk));
+              }
+            }
+          } else if (event.data.type === 'storageGet') {
+            const callback = callbacksMap.get(event.data.id);
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'storageSet') {
+            const callback = callbacksMap.get(event.data.id);
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'storageDelete') {
+            const callback = callbacksMap.get(event.data.id);
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'storageList') {
+            const callback = callbacksMap.get(event.data.id);
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          }
+        });
+
+        window.addEventListener('click', (event) => {
+          const isEl = event.target instanceof HTMLElement;
+          if (!isEl) return;
+    
+          // find ancestor links
+          const linkEl = event.target.closest("a");
+          if (!linkEl || !linkEl.href) return;
+    
+          event.preventDefault();
+          event.stopImmediatePropagation();
+    
+          if (linkEl.href.startsWith("blob-request:")) {
+            const blob = getBlobFromURL(linkEl.href);
+            if (!blob) return;
+            void blob.arrayBuffer().then((data) => {
+              window.parent.postMessage({
+                type: "downloadFile",
+                filename: linkEl.download,
+                data,
+                mimeType: blob.type || "application/octet-stream",
+              });
+            });
+          } else if (linkEl.href.startsWith("data:")) {
+            const [header, base64Data] = linkEl.href.split(",");
+            const mimeMatch = header.match(/data:([^;]+)/);
+            const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+            const binaryString = atob(base64Data);
+            const data = Uint8Array.from(binaryString, (c) =>
+              c.charCodeAt(0),
+            ).buffer;
+            window.parent.postMessage({
+              type: "downloadFile",
+              filename: linkEl.download,
+              data,
+              mimeType,
+            });
+          } else {
+            let linkUrl;
+            try {
+              linkUrl = new URL(linkEl.href);
+            } catch (error) {
+              return;
+            }
+    
+            if (linkUrl.hostname === window.location.hostname) return;
+      
+            window.parent.postMessage({
+              type: 'openExternal',
+              href: linkEl.href,
+            }, '*');
+          }
+      });
+
+        const originalOpen = window.open;
+        window.open = function (url) {
+          window.parent.postMessage({
+            type: "openExternal",
+            href: url,
+          }, "*");
+        };
+
+        window.addEventListener('error', (event) => {
+          window.parent.postMessage({ type: 'console', message: 'Uncaught Error: ' + event.message }, '*');
+        });
+      })();
+    </script>
+  
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HMU Service — Gestione Lavorazioni</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --surface: #111720;
+    --surface2: #1a2333;
+    --border: #1e2d42;
+    --accent: #e8441a;
+    --accent2: #f5a623;
+    --blue: #2d7dd2;
+    --green: #2ecc71;
+    --text: #e8edf2;
+    --text2: #7a8fa6;
+    --red: #e84040;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 15px; font-weight: 800; letter-spacing: .5px;
+  }
+  .logo-icon {
+    width: 30px; height: 30px;
+    background: var(--accent);
+    clip-path: polygon(0 0,100% 0,100% 70%,70% 100%,0 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .logo span { color: var(--accent); }
+  .header-right { display: flex; gap: 8px; align-items: center; }
+  .mode-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 12px; font-family: var(--mono); cursor: pointer;
+    transition: all .2s;
+  }
+  .mode-badge:hover { border-color: var(--accent); color: var(--accent); }
+  .mode-badge.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ── VIEWS ── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── CAPOTURNO VIEW ── */
+  .ct-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 0;
+    height: calc(100vh - 60px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-header h2 {
+    font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text2); margin-bottom: 14px;
+  }
+  .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  input[type=text], input[type=number], textarea, select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    outline: none;
+    width: 100%;
+    transition: border-color .2s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+  select option { background: var(--surface); }
+
+  .btn {
+    padding: 9px 16px; border-radius: 6px; border: none; cursor: pointer;
+    font-family: var(--sans); font-size: 13px; font-weight: 700;
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #d03a14; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--text2); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-blue { background: var(--blue); color: #fff; }
+  .btn-blue:hover { background: #2369b8; }
+  .btn-green { background: var(--green); color: #000; }
+
+  /* Train list */
+  .train-list { flex: 1; overflow-y: auto; padding: 12px; }
+  .train-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all .15s;
+    position: relative;
+  }
+  .train-card:hover, .train-card.selected { border-color: var(--accent); }
+  .train-card.selected { background: rgba(232,68,26,.08); }
+  .train-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .train-id { font-size: 16px; font-weight: 800; font-family: var(--mono); }
+  .train-progress { font-size: 12px; color: var(--text2); font-family: var(--mono); }
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); transition: width .3s; border-radius: 2px; }
+  .progress-fill.complete { background: var(--green); }
+
+  /* Main panel */
+  .main-panel { overflow-y: auto; padding: 24px; }
+  .panel-empty {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text2); gap: 12px;
+  }
+  .panel-empty .big-icon { font-size: 48px; opacity: .3; }
+  .panel-empty p { font-family: var(--mono); font-size: 13px; }
+
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 20px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title { font-size: 24px; font-weight: 800; }
+  .panel-meta { font-size: 13px; color: var(--text2); font-family: var(--mono); margin-top: 4px; }
+
+  /* Stats row */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+  }
+  .stat-label { font-size: 11px; color: var(--text2); letter-spacing: 1.5px; text-transform: uppercase; font-family: var(--mono); margin-bottom: 6px; }
+  .stat-value { font-size: 22px; font-weight: 800; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.orange { color: var(--accent2); }
+  .stat-value.red { color: var(--red); }
+  .stat-value.blue { color: var(--blue); }
+
+  /* Add lavorazione form */
+  .add-lav-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin-bottom: 20px;
+  }
+  .add-lav-form h3 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--text2); margin-bottom: 12px; font-family: var(--mono); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end; }
+
+  /* Lavorazioni table */
+  .lav-section h3 {
+    font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text2); margin-bottom: 12px; font-family: var(--mono);
+  }
+  .lav-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin-bottom: 8px;
+    transition: border-color .15s;
+  }
+  .lav-item.done { border-color: rgba(46,204,113,.3); background: rgba(46,204,113,.04); }
+  .lav-item.partial { border-color: rgba(245,166,35,.3); background: rgba(245,166,35,.04); }
+  .lav-item.waiting { border-color: rgba(232,64,64,.3); background: rgba(232,64,64,.04); }
+
+  .lav-header { display: flex; justify-content: space-between; align-items: center; }
+  .lav-title { font-size: 14px; font-weight: 700; }
+  .lav-meta { font-size: 12px; color: var(--text2); font-family: var(--mono); margin-top: 4px; }
+  .status-pill {
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+    font-family: var(--mono); letter-spacing: .5px;
+  }
+  .pill-open { background: rgba(122,143,166,.15); color: var(--text2); }
+  .pill-done { background: rgba(46,204,113,.15); color: var(--green); }
+  .pill-partial { background: rgba(245,166,35,.15); color: var(--accent2); }
+  .pill-waiting { background: rgba(232,64,64,.15); color: var(--red); }
+
+  .lav-details {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    font-size: 13px; font-family: var(--mono);
+  }
+  .lav-details .detail-item { color: var(--text2); }
+  .lav-details .detail-item span { color: var(--text); }
+  .lav-details.full { grid-template-columns: 1fr; }
+
+  /* Link section */
+  .link-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 14px;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--blue); word-break: break-all;
+    margin-top: 8px;
+  }
+
+  /* Export panel */
+  .export-area {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin-top: 16px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.8;
+    white-space: pre-wrap; color: var(--text2); max-height: 300px; overflow-y: auto;
+  }
+
+  /* ── TECNICO VIEW ── */
+  .tec-layout {
+    max-width: 600px; margin: 0 auto; padding: 20px 16px;
+  }
+  .tec-header {
+    text-align: center; padding: 24px 0 20px;
+    border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  }
+  .tec-header .train-big { font-size: 32px; font-weight: 800; font-family: var(--mono); }
+  .tec-header .tec-sub { font-size: 13px; color: var(--text2); margin-top: 4px; }
+
+  .tec-lav {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; margin-bottom: 14px;
+  }
+  .tec-lav-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .tec-lav-type {
+    font-size: 11px; font-family: var(--mono); letter-spacing: 1px;
+    text-transform: uppercase; color: var(--text2); margin-bottom: 14px;
+  }
+  .field-label { font-size: 12px; color: var(--text2); font-family: var(--mono); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; margin-top: 12px; }
+  .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mat-row { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .mat-list { margin-bottom: 8px; }
+  .btn-icon { width: 32px; height: 32px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all .15s; }
+  .btn-icon:hover { border-color: var(--red); color: var(--red); }
+
+  .esito-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .esito-btn {
+    padding: 10px; border-radius: 8px; border: 2px solid var(--border);
+    background: transparent; color: var(--text2); cursor: pointer;
+    font-family: var(--sans); font-size: 12px; font-weight: 700;
+    text-align: center; transition: all .15s;
+  }
+  .esito-btn.sel-risolto { border-color: var(--green); color: var(--green); background: rgba(46,204,113,.1); }
+  .esito-btn.sel-parziale { border-color: var(--accent2); color: var(--accent2); background: rgba(245,166,35,.1); }
+  .esito-btn.sel-attesa { border-color: var(--red); color: var(--red); background: rgba(232,64,64,.1); }
+
+  .tec-submit-btn {
+    width: 100%; padding: 16px; margin-top: 8px;
+    background: var(--accent); border: none; border-radius: 8px;
+    color: #fff; font-family: var(--sans); font-size: 15px; font-weight: 800;
+    cursor: pointer; transition: all .15s;
+  }
+  .tec-submit-btn:hover { background: #d03a14; }
+  .tec-submit-btn:disabled { background: var(--border); cursor: not-allowed; color: var(--text2); }
+
+  .done-banner {
+    background: rgba(46,204,113,.1); border: 1px solid var(--green);
+    border-radius: 8px; padding: 14px; text-align: center;
+    color: var(--green); font-weight: 700; font-size: 14px;
+    margin-bottom: 14px;
+  }
+
+  /* Tecnico login */
+  .tec-login {
+    max-width: 380px; margin: 60px auto; padding: 0 16px;
+  }
+  .login-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px;
+  }
+  .login-card h2 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .login-card p { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 18px;
+    font-size: 13px; font-family: var(--mono);
+    opacity: 0; transform: translateY(10px);
+    transition: all .3s; pointer-events: none; z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error { border-color: var(--red); color: var(--red); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  label.field-label-inline { font-size: 13px; color: var(--text2); }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  @media (max-width: 700px) {
+    .ct-layout { grid-template-columns: 1fr; }
+    .sidebar { height: auto; max-height: 40vh; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .form-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
 </head>
-
 <body id="artifacts-component-root-html">
-  <header>
-    <div class="logo">
-      <div class="logo-icon">🚆</div> HMU <span>SERVICE</span>
-    </div>
-    <div class="header-right"> <button class="mode-badge active" id="btn-ct"
-        onclick="switchMode('capoturno')">Capoturno</button> <button class="mode-badge" id="btn-tec"
-        onclick="switchMode('tecnico')">Tecnico</button> </div>
-  </header> <!-- ══════════════════════════════════ CAPOTURNO VIEW ══════════════════════════════════ -->
-  <div id="view-capoturno" class="view active">
-    <div class="ct-layout"> <!-- Sidebar: lista treni -->
-      <div class="sidebar">
-        <div class="sidebar-header">
-          <h2>Ordini di Lavoro</h2>
-          <div class="input-row"> <input type="text" id="new-train-id" placeholder="N° Treno (es. ETR700-12)"
-              maxlength="20"> </div>
-          <div class="input-row"> <input type="text" id="new-turno" placeholder="Turno (es. Mattina 06-14)"> <button
-              class="btn btn-primary" onclick="createOdl()">+</button> </div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🚆</div>
+    HMU <span>SERVICE</span>
+  </div>
+  <div class="header-right">
+    <button class="mode-badge active" id="btn-ct" onclick="switchMode('capoturno')">Capoturno</button>
+    <button class="mode-badge" id="btn-tec" onclick="switchMode('tecnico')">Tecnico</button>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════
+     CAPOTURNO VIEW
+══════════════════════════════════ -->
+<div id="view-capoturno" class="view active">
+  <div class="ct-layout">
+
+    <!-- Sidebar: lista treni -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>Ordini di Lavoro</h2>
+        <div class="input-row">
+          <input type="text" id="new-train-id" placeholder="N° Treno (es. ETR700-12)" maxlength="20">
         </div>
-        <div class="train-list" id="train-list">
-          <div style="text-align:center;padding:30px;color:var(--text2);font-size:13px;font-family:var(--mono);"> Nessun
-            ordine ancora.<br>Crea il primo ↑ </div>
-        </div>
-      </div> <!-- Main panel -->
-      <div class="main-panel" id="main-panel">
-        <div class="panel-empty">
-          <div class="big-icon">🚆</div>
-          <p>Seleziona un treno dalla lista</p>
-          <p style="opacity:.5">o crea un nuovo ordine di lavoro</p>
-        </div>
-      </div>
-    </div>
-  </div> <!-- ══════════════════════════════════ TECNICO VIEW ══════════════════════════════════ -->
-  <div id="view-tecnico" class="view">
-    <div id="tec-login-area">
-      <div class="tec-login">
-        <div class="login-card">
-          <h2>Accesso Tecnico</h2>
-          <p>Inserisci il codice ordine ricevuto dal capoturno</p>
-          <div class="field-label">Codice OdL</div> <input type="text" id="tec-odl-code" placeholder="es. ODL-ABC123"
-            style="margin-bottom:12px">
-          <div class="field-label">Nome e Cognome</div> <input type="text" id="tec-name" placeholder="Mario Rossi"
-            style="margin-bottom:12px">
-          <div class="field-label">Matricola</div> <input type="text" id="tec-matricola" placeholder="es. 12345"
-            style="margin-bottom:16px"> <button class="btn btn-primary" style="width:100%" onclick="tecLogin()">Accedi
-            all'Ordine</button>
+        <div class="input-row">
+          <input type="text" id="new-turno" placeholder="Turno (es. Mattina 06-14)">
+          <button class="btn btn-primary" onclick="createOdl()">+</button>
         </div>
       </div>
+      <div class="train-list" id="train-list"><div class="train-card selected" onclick="selectOdl('ODL-KUTWYP')">
+      <div class="train-card-header">
+        <div class="train-id">prova 1</div>
+        <div class="train-progress">0/0</div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);font-family:var(--mono);margin-bottom:8px">ODL-KUTWYP · 1</div>
+      <div class="progress-bar"><div class="progress-fill " style="width:0%"></div></div>
+    </div></div>
     </div>
-    <div id="tec-work-area" style="display:none">
-      <div class="tec-layout" id="tec-lav-container"></div>
+
+    <!-- Main panel -->
+    <div class="main-panel" id="main-panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Treno prova 1</div>
+        <div class="panel-meta">ODL-KUTWYP · Turno: 1 · 15/03/2026, 01:29:11</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="copyCode('ODL-KUTWYP')">📋 Copia codice tecnico</button>
+        <button class="btn btn-blue btn-sm" onclick="showExport()">📤 Export turno</button>
+        <button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deleteOdl('ODL-KUTWYP')">🗑</button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Totale</div><div class="stat-value blue">0</div></div>
+      <div class="stat-card"><div class="stat-label">Risolte</div><div class="stat-value green">0</div></div>
+      <div class="stat-card"><div class="stat-label">Parziali</div><div class="stat-value orange">0</div></div>
+      <div class="stat-card"><div class="stat-label">In attesa</div><div class="stat-value red">0</div></div>
+    </div>
+
+    <div class="link-box">🔑 Codice per il tecnico: <strong style="color:var(--text);font-size:15px">ODL-KUTWYP</strong> &nbsp;<span style="color:var(--text2);font-size:11px">→ il tecnico lo inserisce nella vista Tecnico</span></div>
+
+    <hr class="divider">
+
+    <div class="add-lav-form">
+      <h3>+ Nuova Lavorazione</h3>
+      <div class="form-grid">
+        <input type="text" id="lav-desc" placeholder="Descrizione attività">
+        <select id="lav-tipo">
+          <option value="Preventiva">Preventiva</option>
+          <option value="Correttiva">Correttiva</option>
+        </select>
+        <input type="text" id="lav-tecnico" placeholder="Tecnico assegnato">
+        <button class="btn btn-primary" onclick="addLavorazione()">Aggiungi</button>
+      </div>
+    </div>
+
+    <div class="lav-section">
+      <h3>Lavorazioni (0)</h3>
+      <div style="color:var(--text2);font-size:13px;font-family:var(--mono);padding:16px 0">Nessuna lavorazione aggiunta ancora.</div>
+      
+    </div>
+
+    <div id="export-section"></div>
+  </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     TECNICO VIEW
+══════════════════════════════════ -->
+<div id="view-tecnico" class="view">
+  <div id="tec-login-area">
+    <div class="tec-login">
+      <div class="login-card">
+        <h2>Accesso Tecnico</h2>
+        <p>Inserisci il codice ordine ricevuto dal capoturno</p>
+        <div class="field-label">Codice OdL</div>
+        <input type="text" id="tec-odl-code" placeholder="es. ODL-ABC123" style="margin-bottom:12px">
+        <div class="field-label">Nome e Cognome</div>
+        <input type="text" id="tec-name" placeholder="Mario Rossi" style="margin-bottom:12px">
+        <div class="field-label">Matricola</div>
+        <input type="text" id="tec-matricola" placeholder="es. 12345" style="margin-bottom:16px">
+        <button class="btn btn-primary" style="width:100%" onclick="tecLogin()">Accedi all'Ordine</button>
+      </div>
     </div>
   </div>
-  <div class="toast" id="toast"></div>
-  <script> // ── STORAGE ────────────────────────────────────────────── const STORAGE_KEY = 'hmu_service_v2'; function loadData() { try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { odls: {} }; } catch { return { odls: {} }; } } function saveData(data) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) { console.error('Save error', e); } } let DB = { odls: {} }; let selectedOdlId = null; let currentTecnico = null; // ── UTILS ────────────────────────────────────────────── function genId() { return 'ODL-' + Math.random().toString(36).substr(2,6).toUpperCase(); } function toast(msg, type='success') { const el = document.getElementById('toast'); el.textContent = msg; el.className = 'toast show ' + type; setTimeout(() => el.className = 'toast', 2200); } function switchMode(mode) { document.getElementById('view-capoturno').classList.toggle('active', mode==='capoturno'); document.getElementById('view-tecnico').classList.toggle('active', mode==='tecnico'); document.getElementById('btn-ct').classList.toggle('active', mode==='capoturno'); document.getElementById('btn-tec').classList.toggle('active', mode==='tecnico'); } // ── CAPOTURNO ────────────────────────────────────────── function createOdl() { const trainId = document.getElementById('new-train-id').value.trim(); const turno = document.getElementById('new-turno').value.trim(); if (!trainId) { toast('Inserisci il numero treno', 'error'); return; } const id = genId(); DB.odls[id] = { id, trainId, turno: turno || '—', createdAt: new Date().toLocaleString('it-IT'), lavorazioni: [] }; saveData(DB); renderTrainList(); selectOdl(id); document.getElementById('new-train-id').value = ''; document.getElementById('new-turno').value = ''; toast('Ordine creato: ' + id); } function renderTrainList() { const el = document.getElementById('train-list'); const odls = Object.values(DB.odls); if (!odls.length) { el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2);font-size:13px;font-family:var(--mono);">Nessun ordine ancora.<br>Crea il primo ↑</div>'; return; } el.innerHTML = odls.reverse().map(o => { const total = o.lavorazioni.length; const done = o.lavorazioni.filter(l => l.esito && l.esito !== '').length; const pct = total ? Math.round(done/total*100) : 0; return `<div class="train-card ${selectedOdlId===o.id?'selected':''}" onclick="selectOdl('${o.id}')"> <div class="train-card-header"> <div class="train-id">${o.trainId}</div> <div class="train-progress">${done}/${total}</div> </div> <div style="font-size:12px;color:var(--text2);font-family:var(--mono);margin-bottom:8px">${o.id} · ${o.turno}</div> <div class="progress-bar"><div class="progress-fill ${pct===100?'complete':''}" style="width:${pct}%"></div></div> </div>`; }).join(''); } function selectOdl(id) { selectedOdlId = id; renderTrainList(); renderMainPanel(); } function renderMainPanel() { const panel = document.getElementById('main-panel'); if (!selectedOdlId || !DB.odls[selectedOdlId]) { panel.innerHTML = '<div class="panel-empty"><div class="big-icon">🚆</div><p>Seleziona un treno dalla lista</p></div>'; return; } const odl = DB.odls[selectedOdlId]; const total = odl.lavorazioni.length; const done = odl.lavorazioni.filter(l=>l.esito==='Risolto').length; const partial = odl.lavorazioni.filter(l=>l.esito==='Parziale').length; const waiting = odl.lavorazioni.filter(l=>l.esito==='In attesa ricambio').length; const open = odl.lavorazioni.filter(l=>!l.esito||l.esito==='').length; const baseUrl = window.location.href.split('?')[0]; const link = baseUrl + '?odl=' + odl.id; panel.innerHTML = ` <div class="panel-header"> <div> <div class="panel-title">Treno ${odl.trainId}</div> <div class="panel-meta">${odl.id} · Turno: ${odl.turno} · ${odl.createdAt}</div> </div> <div style="display:flex;gap:8px;flex-wrap:wrap"> <button class="btn btn-secondary btn-sm" onclick="copyCode('${odl.id}')">📋 Copia codice tecnico</button> <button class="btn btn-blue btn-sm" onclick="showExport()">📤 Export turno</button> <button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deleteOdl('${odl.id}')">🗑</button> </div> </div> <div class="stats-row"> <div class="stat-card"><div class="stat-label">Totale</div><div class="stat-value blue">${total}</div></div> <div class="stat-card"><div class="stat-label">Risolte</div><div class="stat-value green">${done}</div></div> <div class="stat-card"><div class="stat-label">Parziali</div><div class="stat-value orange">${partial}</div></div> <div class="stat-card"><div class="stat-label">In attesa</div><div class="stat-value red">${waiting}</div></div> </div> <div class="link-box">🔑 Codice per il tecnico: <strong style="color:var(--text);font-size:15px">${odl.id}</strong> &nbsp;<span style="color:var(--text2);font-size:11px">→ il tecnico lo inserisce nella vista Tecnico</span></div> <hr class="divider"> <div class="add-lav-form"> <h3>+ Nuova Lavorazione</h3> <div class="form-grid"> <input type="text" id="lav-desc" placeholder="Descrizione attività"> <select id="lav-tipo"> <option value="Preventiva">Preventiva</option> <option value="Correttiva">Correttiva</option> </select> <input type="text" id="lav-tecnico" placeholder="Tecnico assegnato"> <button class="btn btn-primary" onclick="addLavorazione()">Aggiungi</button> </div> </div> <div class="lav-section"> <h3>Lavorazioni (${total})</h3> ${total === 0 ? '<div style="color:var(--text2);font-size:13px;font-family:var(--mono);padding:16px 0">Nessuna lavorazione aggiunta ancora.</div>' : ''} ${odl.lavorazioni.map((l,i) => renderLavItem(l,i)).join('')} </div> <div id="export-section"></div> `; } function renderLavItem(l, i) { const cls = l.esito==='Risolto' ? 'done' : l.esito==='Parziale' ? 'partial' : l.esito==='In attesa ricambio' ? 'waiting' : ''; const pillCls = l.esito==='Risolto' ? 'pill-done' : l.esito==='Parziale' ? 'pill-partial' : l.esito==='In attesa ricambio' ? 'pill-waiting' : 'pill-open'; const pillLabel = l.esito || 'Aperta'; const mats = l.materiali && l.materiali.length ? l.materiali.map(m=>`${m.codice} | ${m.desc} | IN:${m.qin} OUT:${m.qout}`).join(', ') : '—'; return `<div class="lav-item ${cls}"> <div class="lav-header"> <div> <div class="lav-title">${l.descrizione}</div> <div class="lav-meta">${l.tipo} · ${l.tecnicoAssegnato ? 'Assegnata a: '+l.tecnicoAssegnato : 'Non assegnata'}</div> </div> <span class="status-pill ${pillCls}">${pillLabel}</span> </div> ${l.esito ? `<div class="lav-details"> <div class="detail-item">Tecnico: <span>${l.tecnicoNome || '—'} (${l.matricola || '—'})</span></div> <div class="detail-item">Ore: <span>${l.oraInizio || '—'} → ${l.oraFine || '—'}</span></div> <div class="detail-item">Attività svolta: <span>${l.attivitaSvolta || '—'}</span></div> <div class="detail-item">Causa: <span>${l.causa || '—'}</span></div> <div class="detail-item" style="grid-column:1/-1">Materiali: <span>${mats}</span></div> </div>` : ''} </div>`; } function addLavorazione() { const desc = document.getElementById('lav-desc').value.trim(); const tipo = document.getElementById('lav-tipo').value; const tec = document.getElementById('lav-tecnico').value.trim(); if (!desc) { toast('Inserisci la descrizione', 'error'); return; } DB.odls[selectedOdlId].lavorazioni.push({ id: Date.now(), descrizione: desc, tipo, tecnicoAssegnato: tec, esito: '' }); saveData(DB); renderMainPanel(); toast('Lavorazione aggiunta'); } function copyCode(code) { const msg = `Codice ordine di lavoro: ${code}\nApri l'app HMU Service → Vista Tecnico → inserisci questo codice`; navigator.clipboard.writeText(msg).then(()=>toast('Codice copiato! Incollalo su WhatsApp')).catch(()=>toast('Codice: '+code,'error')); } function deleteOdl(id) { if (!confirm('Eliminare questo ordine?')) return; delete DB.odls[id]; selectedOdlId = null; saveData(DB); renderTrainList(); renderMainPanel(); toast('Ordine eliminato'); } function showExport() { const odl = DB.odls[selectedOdlId]; if (!odl) return; let txt = `═══════════════════════════════════════\n`; txt += `RIEPILOGO TURNO — ${odl.turno}\n`; txt += `Treno: ${odl.trainId} | OdL: ${odl.id}\n`; txt += `Data: ${odl.createdAt}\n`; txt += `═══════════════════════════════════════\n\n`; odl.lavorazioni.forEach((l,i) => { txt += `[${i+1}] ${l.tipo.toUpperCase()} — ${l.descrizione}\n`; txt += ` Tecnico: ${l.tecnicoNome||l.tecnicoAssegnato||'—'} (${l.matricola||'—'})\n`; txt += ` Ore: ${l.oraInizio||'—'} → ${l.oraFine||'—'}\n`; txt += ` Attività: ${l.attivitaSvolta||'—'}\n`; txt += ` Causa: ${l.causa||'—'}\n`; if (l.materiali && l.materiali.length) { txt += ` Materiali:\n`; l.materiali.forEach(m => txt += ` - ${m.codice} | ${m.desc} | IN:${m.qin} OUT:${m.qout}\n`); } txt += ` Esito: ${l.esito||'APERTA'}\n\n`; }); txt += `Lavorazioni totali: ${odl.lavorazioni.length}\n`; txt += `Risolte: ${odl.lavorazioni.filter(l=>l.esito==='Risolto').length} | `; txt += `Parziali: ${odl.lavorazioni.filter(l=>l.esito==='Parziale').length} | `; txt += `In attesa: ${odl.lavorazioni.filter(l=>l.esito==='In attesa ricambio').length}\n`; const sec = document.getElementById('export-section'); sec.innerHTML = ` <hr class="divider"> <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"> <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--text2);font-family:var(--mono)">Export Mail Passaggio Turno</div> <button class="btn btn-green btn-sm" onclick="copyExport()">📋 Copia testo</button> </div> <div class="export-area" id="export-text">${txt}</div> `; sec.scrollIntoView({ behavior: 'smooth' }); } function copyExport() { const txt = document.getElementById('export-text').textContent; navigator.clipboard.writeText(txt).then(()=>toast('Testo copiato per la mail!')).catch(()=>toast('Errore copia','error')); } // ── TECNICO ──────────────────────────────────────────── function tecLogin() { const code = document.getElementById('tec-odl-code').value.trim().toUpperCase(); const name = document.getElementById('tec-name').value.trim(); const mat = document.getElementById('tec-matricola').value.trim(); if (!code || !name || !mat) { toast('Compila tutti i campi', 'error'); return; } const odl = DB.odls[code]; if (!odl) { toast('Codice OdL non trovato', 'error'); return; } currentTecnico = { name, matricola: mat }; document.getElementById('tec-login-area').style.display = 'none'; document.getElementById('tec-work-area').style.display = 'block'; renderTecLayout(odl); } function renderTecLayout(odl) { const container = document.getElementById('tec-lav-container'); const myLavs = odl.lavorazioni.filter(l => !l.tecnicoAssegnato || l.tecnicoAssegnato.toLowerCase().includes(currentTecnico.name.split(' ')[0].toLowerCase()) || true); container.innerHTML = ` <div class="tec-header"> <div class="train-big">🚆 ${odl.trainId}</div> <div class="tec-sub">${odl.id} · ${odl.turno}</div> <div class="tec-sub" style="color:var(--accent);margin-top:4px">Ciao, ${currentTecnico.name} (${currentTecnico.matricola})</div> </div> ${myLavs.map((l,i) => renderTecLav(l, i, odl.id)).join('')} `; } function renderTecLav(l, i, odlId) { if (l.esito) { return `<div class="done-banner">✅ Lavorazione "${l.descrizione}" già chiusa: ${l.esito}</div>`; } const mats = (l._tempMats || []).map((m,mi) => ` <div class="mat-row"> <input type="text" placeholder="Codice" value="${m.codice}" oninput="updateMat('${odlId}',${i},${mi},'codice',this.value)"> <input type="text" placeholder="IN" value="${m.qin}" oninput="updateMat('${odlId}',${i},${mi},'qin',this.value)"> <input type="text" placeholder="OUT" value="${m.qout}" oninput="updateMat('${odlId}',${i},${mi},'qout',this.value)"> <button class="btn-icon" onclick="removeMat('${odlId}',${i},${mi})">✕</button> </div> <input type="text" placeholder="Descrizione materiale" value="${m.desc}" oninput="updateMat('${odlId}',${i},${mi},'desc',this.value)" style="margin-bottom:6px"> `).join(''); return `<div class="tec-lav" id="teclav-${odlId}-${i}"> <div class="tec-lav-title">${l.descrizione}</div> <div class="tec-lav-type">${l.tipo}</div> <div class="field-label">Ora inizio / fine</div> <div class="time-row"> <input type="text" placeholder="es. 08:30" id="t-start-${i}" value="${l._tStart||''}"> <input type="text" placeholder="es. 10:15" id="t-end-${i}" value="${l._tEnd||''}"> </div> <div class="field-label">Attività svolta</div> <textarea placeholder="Descrivi cosa hai fatto..." id="t-attiv-${i}" rows="3">${l._attiv||''}</textarea> <div class="field-label">Causa identificata</div> <input type="text" placeholder="es. Connettore ossidato" id="t-causa-${i}" value="${l._causa||''}"> <div class="field-label">Materiali utilizzati</div> <div class="mat-list" id="mat-list-${odlId}-${i}">${mats}</div> <button class="btn btn-secondary btn-sm" onclick="addMat('${odlId}',${i})">+ Aggiungi materiale</button> <div class="field-label">Esito</div> <div class="esito-grid"> <button class="esito-btn ${l._esito==='Risolto'?'sel-risolto':''}" onclick="setEsito('${odlId}',${i},'Risolto')">✅ Risolto</button> <button class="esito-btn ${l._esito==='Parziale'?'sel-parziale':''}" onclick="setEsito('${odlId}',${i},'Parziale')">⚠️ Parziale</button> <button class="esito-btn ${l._esito==='In attesa ricambio'?'sel-attesa':''}" onclick="setEsito('${odlId}',${i},'In attesa ricambio')">🔴 Attesa</button> </div> <button class="tec-submit-btn" onclick="submitLav('${odlId}',${i})">Chiudi lavorazione</button> </div>`; } function addMat(odlId, lavIdx) { const l = DB.odls[odlId].lavorazioni[lavIdx]; if (!l._tempMats) l._tempMats = []; l._tempMats.push({ codice:'', desc:'', qin:'', qout:'' }); saveData(DB); renderTecLayout(DB.odls[odlId]); } function removeMat(odlId, lavIdx, matIdx) { DB.odls[odlId].lavorazioni[lavIdx]._tempMats.splice(matIdx, 1); saveData(DB); renderTecLayout(DB.odls[odlId]); } function updateMat(odlId, lavIdx, matIdx, field, val) { DB.odls[odlId].lavorazioni[lavIdx]._tempMats[matIdx][field] = val; } function setEsito(odlId, lavIdx, val) { DB.odls[odlId].lavorazioni[lavIdx]._esito = val; renderTecLayout(DB.odls[odlId]); } function submitLav(odlId, lavIdx) { const l = DB.odls[odlId].lavorazioni[lavIdx]; const tStart = document.getElementById('t-start-'+lavIdx)?.value.trim(); const tEnd = document.getElementById('t-end-'+lavIdx)?.value.trim(); const attiv = document.getElementById('t-attiv-'+lavIdx)?.value.trim(); const causa = document.getElementById('t-causa-'+lavIdx)?.value.trim(); if (!attiv) { toast('Inserisci la descrizione attività', 'error'); return; } if (!l._esito) { toast('Seleziona un esito', 'error'); return; } l.tecnicoNome = currentTecnico.name; l.matricola = currentTecnico.matricola; l.oraInizio = tStart; l.oraFine = tEnd; l.attivitaSvolta = attiv; l.causa = causa; l.materiali = l._tempMats || []; l.esito = l._esito; delete l._tempMats; delete l._esito; delete l._tStart; delete l._tEnd; delete l._attiv; delete l._causa; saveData(DB); toast('Lavorazione chiusa! ✅'); renderTecLayout(DB.odls[odlId]); if (selectedOdlId === odlId) renderMainPanel(); } // ── URL PARAM per link diretto ───────────────────────── function checkUrlParam() { const params = new URLSearchParams(window.location.search); const odlId = params.get('odl'); if (odlId && DB.odls[odlId]) { switchMode('tecnico'); document.getElementById('tec-odl-code').value = odlId; } } // ── INIT ─────────────────────────────────────────────── DB = loadData(); renderTrainList(); checkUrlParam(); </script>
-</body>
+  <div id="tec-work-area" style="display:none">
+    <div class="tec-layout" id="tec-lav-container"></div>
+  </div>
+</div>
 
-</html>
+<div class="toast" id="toast">Ordine creato: ODL-KUTWYP</div>
+
+<script>
+// ── STORAGE ──────────────────────────────────────────────
+const STORAGE_KEY = 'hmu_service_v2';
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : { odls: {} };
+  } catch { return { odls: {} }; }
+}
+
+function saveData(data) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch(e) { console.error('Save error', e); }
+}
+
+let DB = { odls: {} };
+let selectedOdlId = null;
+let currentTecnico = null;
+
+// ── UTILS ──────────────────────────────────────────────
+function genId() { return 'ODL-' + Math.random().toString(36).substr(2,6).toUpperCase(); }
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast show ' + type;
+  setTimeout(() => el.className = 'toast', 2200);
+}
+function switchMode(mode) {
+  document.getElementById('view-capoturno').classList.toggle('active', mode==='capoturno');
+  document.getElementById('view-tecnico').classList.toggle('active', mode==='tecnico');
+  document.getElementById('btn-ct').classList.toggle('active', mode==='capoturno');
+  document.getElementById('btn-tec').classList.toggle('active', mode==='tecnico');
+}
+
+// ── CAPOTURNO ──────────────────────────────────────────
+function createOdl() {
+  const trainId = document.getElementById('new-train-id').value.trim();
+  const turno = document.getElementById('new-turno').value.trim();
+  if (!trainId) { toast('Inserisci il numero treno', 'error'); return; }
+  const id = genId();
+  DB.odls[id] = {
+    id, trainId, turno: turno || '—',
+    createdAt: new Date().toLocaleString('it-IT'),
+    lavorazioni: []
+  };
+  saveData(DB);
+  renderTrainList();
+  selectOdl(id);
+  document.getElementById('new-train-id').value = '';
+  document.getElementById('new-turno').value = '';
+  toast('Ordine creato: ' + id);
+}
+
+function renderTrainList() {
+  const el = document.getElementById('train-list');
+  const odls = Object.values(DB.odls);
+  if (!odls.length) {
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2);font-size:13px;font-family:var(--mono);">Nessun ordine ancora.<br>Crea il primo ↑</div>';
+    return;
+  }
+  el.innerHTML = odls.reverse().map(o => {
+    const total = o.lavorazioni.length;
+    const done = o.lavorazioni.filter(l => l.esito && l.esito !== '').length;
+    const pct = total ? Math.round(done/total*100) : 0;
+    return `<div class="train-card ${selectedOdlId===o.id?'selected':''}" onclick="selectOdl('${o.id}')">
+      <div class="train-card-header">
+        <div class="train-id">${o.trainId}</div>
+        <div class="train-progress">${done}/${total}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);font-family:var(--mono);margin-bottom:8px">${o.id} · ${o.turno}</div>
+      <div class="progress-bar"><div class="progress-fill ${pct===100?'complete':''}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function selectOdl(id) {
+  selectedOdlId = id;
+  renderTrainList();
+  renderMainPanel();
+}
+
+function renderMainPanel() {
+  const panel = document.getElementById('main-panel');
+  if (!selectedOdlId || !DB.odls[selectedOdlId]) {
+    panel.innerHTML = '<div class="panel-empty"><div class="big-icon">🚆</div><p>Seleziona un treno dalla lista</p></div>';
+    return;
+  }
+  const odl = DB.odls[selectedOdlId];
+  const total = odl.lavorazioni.length;
+  const done = odl.lavorazioni.filter(l=>l.esito==='Risolto').length;
+  const partial = odl.lavorazioni.filter(l=>l.esito==='Parziale').length;
+  const waiting = odl.lavorazioni.filter(l=>l.esito==='In attesa ricambio').length;
+  const open = odl.lavorazioni.filter(l=>!l.esito||l.esito==='').length;
+  const baseUrl = window.location.href.split('?')[0];
+  const link = baseUrl + '?odl=' + odl.id;
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Treno ${odl.trainId}</div>
+        <div class="panel-meta">${odl.id} · Turno: ${odl.turno} · ${odl.createdAt}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="copyCode('${odl.id}')">📋 Copia codice tecnico</button>
+        <button class="btn btn-blue btn-sm" onclick="showExport()">📤 Export turno</button>
+        <button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deleteOdl('${odl.id}')">🗑</button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Totale</div><div class="stat-value blue">${total}</div></div>
+      <div class="stat-card"><div class="stat-label">Risolte</div><div class="stat-value green">${done}</div></div>
+      <div class="stat-card"><div class="stat-label">Parziali</div><div class="stat-value orange">${partial}</div></div>
+      <div class="stat-card"><div class="stat-label">In attesa</div><div class="stat-value red">${waiting}</div></div>
+    </div>
+
+    <div class="link-box">🔑 Codice per il tecnico: <strong style="color:var(--text);font-size:15px">${odl.id}</strong> &nbsp;<span style="color:var(--text2);font-size:11px">→ il tecnico lo inserisce nella vista Tecnico</span></div>
+
+    <hr class="divider">
+
+    <div class="add-lav-form">
+      <h3>+ Nuova Lavorazione</h3>
+      <div class="form-grid">
+        <input type="text" id="lav-desc" placeholder="Descrizione attività">
+        <select id="lav-tipo">
+          <option value="Preventiva">Preventiva</option>
+          <option value="Correttiva">Correttiva</option>
+        </select>
+        <input type="text" id="lav-tecnico" placeholder="Tecnico assegnato">
+        <button class="btn btn-primary" onclick="addLavorazione()">Aggiungi</button>
+      </div>
+    </div>
+
+    <div class="lav-section">
+      <h3>Lavorazioni (${total})</h3>
+      ${total === 0 ? '<div style="color:var(--text2);font-size:13px;font-family:var(--mono);padding:16px 0">Nessuna lavorazione aggiunta ancora.</div>' : ''}
+      ${odl.lavorazioni.map((l,i) => renderLavItem(l,i)).join('')}
+    </div>
+
+    <div id="export-section"></div>
+  `;
+}
+
+function renderLavItem(l, i) {
+  const cls = l.esito==='Risolto' ? 'done' : l.esito==='Parziale' ? 'partial' : l.esito==='In attesa ricambio' ? 'waiting' : '';
+  const pillCls = l.esito==='Risolto' ? 'pill-done' : l.esito==='Parziale' ? 'pill-partial' : l.esito==='In attesa ricambio' ? 'pill-waiting' : 'pill-open';
+  const pillLabel = l.esito || 'Aperta';
+  const mats = l.materiali && l.materiali.length ? l.materiali.map(m=>`${m.codice} | ${m.desc} | IN:${m.qin} OUT:${m.qout}`).join(', ') : '—';
+  return `<div class="lav-item ${cls}">
+    <div class="lav-header">
+      <div>
+        <div class="lav-title">${l.descrizione}</div>
+        <div class="lav-meta">${l.tipo} · ${l.tecnicoAssegnato ? 'Assegnata a: '+l.tecnicoAssegnato : 'Non assegnata'}</div>
+      </div>
+      <span class="status-pill ${pillCls}">${pillLabel}</span>
+    </div>
+    ${l.esito ? `<div class="lav-details">
+      <div class="detail-item">Tecnico: <span>${l.tecnicoNome || '—'} (${l.matricola || '—'})</span></div>
+      <div class="detail-item">Ore: <span>${l.oraInizio || '—'} → ${l.oraFine || '—'}</span></div>
+      <div class="detail-item">Attività svolta: <span>${l.attivitaSvolta || '—'}</span></div>
+      <div class="detail-item">Causa: <span>${l.causa || '—'}</span></div>
+      <div class="detail-item" style="grid-column:1/-1">Materiali: <span>${mats}</span></div>
+    </div>` : ''}
+  </div>`;
+}
+
+function addLavorazione() {
+  const desc = document.getElementById('lav-desc').value.trim();
+  const tipo = document.getElementById('lav-tipo').value;
+  const tec = document.getElementById('lav-tecnico').value.trim();
+  if (!desc) { toast('Inserisci la descrizione', 'error'); return; }
+  DB.odls[selectedOdlId].lavorazioni.push({
+    id: Date.now(), descrizione: desc, tipo, tecnicoAssegnato: tec, esito: ''
+  });
+  saveData(DB);
+  renderMainPanel();
+  toast('Lavorazione aggiunta');
+}
+
+function copyCode(code) {
+  const msg = `Codice ordine di lavoro: ${code}\nApri l'app HMU Service → Vista Tecnico → inserisci questo codice`;
+  navigator.clipboard.writeText(msg).then(()=>toast('Codice copiato! Incollalo su WhatsApp')).catch(()=>toast('Codice: '+code,'error'));
+}
+
+function deleteOdl(id) {
+  if (!confirm('Eliminare questo ordine?')) return;
+  delete DB.odls[id];
+  selectedOdlId = null;
+  saveData(DB);
+  renderTrainList();
+  renderMainPanel();
+  toast('Ordine eliminato');
+}
+
+function showExport() {
+  const odl = DB.odls[selectedOdlId];
+  if (!odl) return;
+  let txt = `═══════════════════════════════════════\n`;
+  txt += `RIEPILOGO TURNO — ${odl.turno}\n`;
+  txt += `Treno: ${odl.trainId}  |  OdL: ${odl.id}\n`;
+  txt += `Data: ${odl.createdAt}\n`;
+  txt += `═══════════════════════════════════════\n\n`;
+  odl.lavorazioni.forEach((l,i) => {
+    txt += `[${i+1}] ${l.tipo.toUpperCase()} — ${l.descrizione}\n`;
+    txt += `    Tecnico: ${l.tecnicoNome||l.tecnicoAssegnato||'—'} (${l.matricola||'—'})\n`;
+    txt += `    Ore: ${l.oraInizio||'—'} → ${l.oraFine||'—'}\n`;
+    txt += `    Attività: ${l.attivitaSvolta||'—'}\n`;
+    txt += `    Causa: ${l.causa||'—'}\n`;
+    if (l.materiali && l.materiali.length) {
+      txt += `    Materiali:\n`;
+      l.materiali.forEach(m => txt += `      - ${m.codice} | ${m.desc} | IN:${m.qin} OUT:${m.qout}\n`);
+    }
+    txt += `    Esito: ${l.esito||'APERTA'}\n\n`;
+  });
+  txt += `Lavorazioni totali: ${odl.lavorazioni.length}\n`;
+  txt += `Risolte: ${odl.lavorazioni.filter(l=>l.esito==='Risolto').length}  |  `;
+  txt += `Parziali: ${odl.lavorazioni.filter(l=>l.esito==='Parziale').length}  |  `;
+  txt += `In attesa: ${odl.lavorazioni.filter(l=>l.esito==='In attesa ricambio').length}\n`;
+
+  const sec = document.getElementById('export-section');
+  sec.innerHTML = `
+    <hr class="divider">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--text2);font-family:var(--mono)">Export Mail Passaggio Turno</div>
+      <button class="btn btn-green btn-sm" onclick="copyExport()">📋 Copia testo</button>
+    </div>
+    <div class="export-area" id="export-text">${txt}</div>
+  `;
+  sec.scrollIntoView({ behavior: 'smooth' });
+}
+
+function copyExport() {
+  const txt = document.getElementById('export-text').textContent;
+  navigator.clipboard.writeText(txt).then(()=>toast('Testo copiato per la mail!')).catch(()=>toast('Errore copia','error'));
+}
+
+// ── TECNICO ────────────────────────────────────────────
+function tecLogin() {
+  const code = document.getElementById('tec-odl-code').value.trim().toUpperCase();
+  const name = document.getElementById('tec-name').value.trim();
+  const mat = document.getElementById('tec-matricola').value.trim();
+  if (!code || !name || !mat) { toast('Compila tutti i campi', 'error'); return; }
+  const odl = DB.odls[code];
+  if (!odl) { toast('Codice OdL non trovato', 'error'); return; }
+  currentTecnico = { name, matricola: mat };
+  document.getElementById('tec-login-area').style.display = 'none';
+  document.getElementById('tec-work-area').style.display = 'block';
+  renderTecLayout(odl);
+}
+
+function renderTecLayout(odl) {
+  const container = document.getElementById('tec-lav-container');
+  const myLavs = odl.lavorazioni.filter(l => !l.tecnicoAssegnato || l.tecnicoAssegnato.toLowerCase().includes(currentTecnico.name.split(' ')[0].toLowerCase()) || true);
+
+  container.innerHTML = `
+    <div class="tec-header">
+      <div class="train-big">🚆 ${odl.trainId}</div>
+      <div class="tec-sub">${odl.id} · ${odl.turno}</div>
+      <div class="tec-sub" style="color:var(--accent);margin-top:4px">Ciao, ${currentTecnico.name} (${currentTecnico.matricola})</div>
+    </div>
+    ${myLavs.map((l,i) => renderTecLav(l, i, odl.id)).join('')}
+  `;
+}
+
+function renderTecLav(l, i, odlId) {
+  if (l.esito) {
+    return `<div class="done-banner">✅ Lavorazione "${l.descrizione}" già chiusa: ${l.esito}</div>`;
+  }
+  const mats = (l._tempMats || []).map((m,mi) => `
+    <div class="mat-row">
+      <input type="text" placeholder="Codice" value="${m.codice}" oninput="updateMat('${odlId}',${i},${mi},'codice',this.value)">
+      <input type="text" placeholder="IN" value="${m.qin}" oninput="updateMat('${odlId}',${i},${mi},'qin',this.value)">
+      <input type="text" placeholder="OUT" value="${m.qout}" oninput="updateMat('${odlId}',${i},${mi},'qout',this.value)">
+      <button class="btn-icon" onclick="removeMat('${odlId}',${i},${mi})">✕</button>
+    </div>
+    <input type="text" placeholder="Descrizione materiale" value="${m.desc}" oninput="updateMat('${odlId}',${i},${mi},'desc',this.value)" style="margin-bottom:6px">
+  `).join('');
+
+  return `<div class="tec-lav" id="teclav-${odlId}-${i}">
+    <div class="tec-lav-title">${l.descrizione}</div>
+    <div class="tec-lav-type">${l.tipo}</div>
+
+    <div class="field-label">Ora inizio / fine</div>
+    <div class="time-row">
+      <input type="text" placeholder="es. 08:30" id="t-start-${i}" value="${l._tStart||''}">
+      <input type="text" placeholder="es. 10:15" id="t-end-${i}" value="${l._tEnd||''}">
+    </div>
+
+    <div class="field-label">Attività svolta</div>
+    <textarea placeholder="Descrivi cosa hai fatto..." id="t-attiv-${i}" rows="3">${l._attiv||''}</textarea>
+
+    <div class="field-label">Causa identificata</div>
+    <input type="text" placeholder="es. Connettore ossidato" id="t-causa-${i}" value="${l._causa||''}">
+
+    <div class="field-label">Materiali utilizzati</div>
+    <div class="mat-list" id="mat-list-${odlId}-${i}">${mats}</div>
+    <button class="btn btn-secondary btn-sm" onclick="addMat('${odlId}',${i})">+ Aggiungi materiale</button>
+
+    <div class="field-label">Esito</div>
+    <div class="esito-grid">
+      <button class="esito-btn ${l._esito==='Risolto'?'sel-risolto':''}" onclick="setEsito('${odlId}',${i},'Risolto')">✅ Risolto</button>
+      <button class="esito-btn ${l._esito==='Parziale'?'sel-parziale':''}" onclick="setEsito('${odlId}',${i},'Parziale')">⚠️ Parziale</button>
+      <button class="esito-btn ${l._esito==='In attesa ricambio'?'sel-attesa':''}" onclick="setEsito('${odlId}',${i},'In attesa ricambio')">🔴 Attesa</button>
+    </div>
+
+    <button class="tec-submit-btn" onclick="submitLav('${odlId}',${i})">Chiudi lavorazione</button>
+  </div>`;
+}
+
+function addMat(odlId, lavIdx) {
+  const l = DB.odls[odlId].lavorazioni[lavIdx];
+  if (!l._tempMats) l._tempMats = [];
+  l._tempMats.push({ codice:'', desc:'', qin:'', qout:'' });
+  saveData(DB);
+  renderTecLayout(DB.odls[odlId]);
+}
+
+function removeMat(odlId, lavIdx, matIdx) {
+  DB.odls[odlId].lavorazioni[lavIdx]._tempMats.splice(matIdx, 1);
+  saveData(DB);
+  renderTecLayout(DB.odls[odlId]);
+}
+
+function updateMat(odlId, lavIdx, matIdx, field, val) {
+  DB.odls[odlId].lavorazioni[lavIdx]._tempMats[matIdx][field] = val;
+}
+
+function setEsito(odlId, lavIdx, val) {
+  DB.odls[odlId].lavorazioni[lavIdx]._esito = val;
+  renderTecLayout(DB.odls[odlId]);
+}
+
+function submitLav(odlId, lavIdx) {
+  const l = DB.odls[odlId].lavorazioni[lavIdx];
+  const tStart = document.getElementById('t-start-'+lavIdx)?.value.trim();
+  const tEnd = document.getElementById('t-end-'+lavIdx)?.value.trim();
+  const attiv = document.getElementById('t-attiv-'+lavIdx)?.value.trim();
+  const causa = document.getElementById('t-causa-'+lavIdx)?.value.trim();
+
+  if (!attiv) { toast('Inserisci la descrizione attività', 'error'); return; }
+  if (!l._esito) { toast('Seleziona un esito', 'error'); return; }
+
+  l.tecnicoNome = currentTecnico.name;
+  l.matricola = currentTecnico.matricola;
+  l.oraInizio = tStart;
+  l.oraFine = tEnd;
+  l.attivitaSvolta = attiv;
+  l.causa = causa;
+  l.materiali = l._tempMats || [];
+  l.esito = l._esito;
+
+  delete l._tempMats; delete l._esito; delete l._tStart; delete l._tEnd; delete l._attiv; delete l._causa;
+
+  saveData(DB);
+  toast('Lavorazione chiusa! ✅');
+  renderTecLayout(DB.odls[odlId]);
+  if (selectedOdlId === odlId) renderMainPanel();
+}
+
+// ── URL PARAM per link diretto ─────────────────────────
+function checkUrlParam() {
+  const params = new URLSearchParams(window.location.search);
+  const odlId = params.get('odl');
+  if (odlId && DB.odls[odlId]) {
+    switchMode('tecnico');
+    document.getElementById('tec-odl-code').value = odlId;
+  }
+}
+
+// ── INIT ───────────────────────────────────────────────
+DB = loadData();
+renderTrainList();
+checkUrlParam();
+</script>
+
+
+</body></html>
