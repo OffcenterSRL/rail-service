@@ -29,14 +29,14 @@ import { Technician, TechnicianService } from '../../services/technician.service
             [(ngModel)]="searchTerm"
             (ngModelChange)="updateSearchTerm($event)"
           />
-          <label class="completed-toggle">
-            <input
-              type="checkbox"
-              [checked]="showCompletedOrders"
-              (change)="toggleShowCompletedOrders($event.target.checked)"
-            />
-            <span>Mostra ODL completati</span>
-          </label>
+            <label class="completed-toggle">
+              <input
+                type="checkbox"
+                [checked]="showCompletedOrders"
+                (change)="toggleShowCompletedOrders($any($event.target).checked)"
+              />
+              <span>Mostra ODL completati</span>
+            </label>
         </div>
 
         <div class="new-order-section">
