@@ -266,6 +266,11 @@ import { Technician, TechnicianService } from '../../services/technician.service
         color: var(--accent-lime);
       }
 
+      .order-status.cancelled {
+        background: rgba(255, 108, 108, 0.16);
+        color: #ff6c6c;
+      }
+
       .order-info {
         font-size: 12px;
         color: var(--text-secondary);
@@ -420,6 +425,7 @@ export class WorkOrderListComponent implements OnInit {
       pending: 'In attesa',
       active: 'In corso',
       completed: 'Completato',
+      cancelled: 'Annullato',
     };
     return map[status];
   }
@@ -449,13 +455,14 @@ export class WorkOrderListComponent implements OnInit {
       if (!matchesSearch) {
         return false;
       }
+      const isHidden = order.status === 'completed' || order.status === 'cancelled';
       if (showCompleted) {
         return true;
       }
       if (normalized) {
         return true;
       }
-      return order.status !== 'completed';
+      return !isHidden;
     });
   }
 

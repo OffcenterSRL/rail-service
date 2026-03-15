@@ -307,6 +307,10 @@ import {
         color: #6ee4a4;
       }
 
+      .status-pill.cancelled {
+        color: #ff6c6c;
+      }
+
       .order-progress {
         display: flex;
         flex-direction: column;
@@ -745,6 +749,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   canCancelOrder(): boolean {
-    return !!this.selectedOrder && this.selectedOrder.status !== 'completed';
+    return (
+      !!this.selectedOrder &&
+      this.selectedOrder.status !== 'completed' &&
+      this.selectedOrder.status !== 'cancelled'
+    );
   }
 }

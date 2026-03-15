@@ -18,7 +18,7 @@ export interface WorkOrder {
   trainNumber: string;
   shift: string;
   codiceODL: string;
-  status: 'pending' | 'active' | 'completed';
+  status: 'pending' | 'active' | 'completed' | 'cancelled';
   tasks: Task[];
   createdAt?: Date;
   assignedTechnician?: string;
@@ -209,7 +209,10 @@ export class WorkOrderService {
     if (status === 'active') {
       return 'active';
     }
-    if (status === 'cancelled' || status === 'used') {
+    if (status === 'cancelled') {
+      return 'cancelled';
+    }
+    if (status === 'used') {
       return 'completed';
     }
     return 'pending';
