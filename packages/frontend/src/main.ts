@@ -1,7 +1,7 @@
-import 'zone.js';
+import { provideZoneChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { provideZoneChangeDetection } from '@angular/core';
+import 'zone.js';
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 
@@ -10,4 +10,4 @@ bootstrapApplication(AppComponent, {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
   ],
-}).catch(err => console.error(err));
+}).catch((err) => console.error(err));
