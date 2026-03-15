@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { connectDatabase } from './config/database';
+import apiRoutes from './routes/api.routes';
 
 dotenv.config();
 
@@ -19,6 +20,8 @@ connectDatabase();
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Rail Service API is running' });
 });
+
+app.use('/api', apiRoutes);
 
 // Start Server
 app.listen(PORT, () => {

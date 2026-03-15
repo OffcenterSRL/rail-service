@@ -1,14 +1,17 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterOutlet } from '@angular/router';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
 import { APP_VERSION } from './app-version';
+import { HttpClientModule } from '@angular/common/http';
+import { DashboardService, DashboardStats } from './services/dashboard.service';
+import { AuthService } from './services/auth.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterOutlet, WorkOrderListComponent],
+  imports: [CommonModule, FormsModule, HttpClientModule, RouterOutlet, WorkOrderListComponent],
   template: `
     <div class="app-shell">
       <header class="header">
@@ -51,15 +54,15 @@ import { APP_VERSION } from './app-version';
         </div>
         <div class="hero-metrics">
           <div class="metric-card">
-            <span class="metric-value">18</span>
+            <span class="metric-value">{{ dashboardStats.interventions }}</span>
             <span class="metric-label">Interventi totali</span>
           </div>
           <div class="metric-card accent">
-            <span class="metric-value">04</span>
+            <span class="metric-value">{{ dashboardStats.techniciansOnline }}</span>
             <span class="metric-label">Tecnici online</span>
           </div>
           <div class="metric-card">
-            <span class="metric-value">12</span>
+            <span class="metric-value">{{ dashboardStats.shiftsCompleted }}</span>
             <span class="metric-label">Turni completati</span>
           </div>
         </div>
@@ -98,7 +101,14 @@ import { APP_VERSION } from './app-version';
               <button class="btn btn-primary" (click)="loginTechnician()">
                 Accedi come tecnico
               </button>
-              <p *ngIf="tecMessage" class="login-message">{{ tecMessage }}</p>
+              <p
+                *ngIf="loginState"
+                class="login-message"
+                [class.success]="loginState.type === 'success'"
+                [class.error]="loginState.type === 'error'"
+              >
+                {{ loginState.message }}
+              </p>
             </div>
           </div>
         </ng-template>
@@ -324,6 +334,14 @@ import { APP_VERSION } from './app-version';
         margin: 0;
       }
 
+      .login-message.success {
+        color: var(--accent-lime);
+      }
+
+      .login-message.error {
+        color: var(--error);
+      }
+
       .login-card .btn {
         width: 100%;
         display: inline-flex;
@@ -492,24 +510,71 @@ import { APP_VERSION } from './app-version';
     `,
   ],
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   viewMode: 'capoturno' | 'tecnico' = 'capoturno';
   tecOdL = '';
   tecName = '';
   tecMatricola = '';
-  tecMessage = '';
+  loginState: { type: 'success' | 'error'; message: string } | null = null;
   appVersion = APP_VERSION;
+  dashboardStats: DashboardStats = {
+    interventions: 0,
+    techniciansOnline: 0,
+    shiftsCompleted: 0,
+    activeTickets: 0,
+    cancelledTickets: 0,
+    lastUpdated: new Date().toISOString(),
+  };
+  private dashboardService = inject(DashboardService);
+  private authService = inject(AuthService);
 
   setView(mode: 'capoturno' | 'tecnico'): void {
     this.viewMode = mode;
-    this.tecMessage = '';
+    this.loginState = null;
   }
 
   loginTechnician(): void {
     if (!this.tecOdL || !this.tecName || !this.tecMatricola) {
-      this.tecMessage = 'Compila tutti i campi per accedere.';
+      this.loginState = { type: 'error', message: 'Compila tutti i campi per accedere.' };
       return;
     }
-    this.tecMessage = `Accesso richiesto per ${this.tecName} · ODL ${this.tecOdL}`;
+
+    this.authService
+      .loginTechnician({
+        code: this.tecOdL,
+        name: this.tecName,
+        matricola: this.tecMatricola,
+      })
+      .subscribe({
+        next: (session) => {
+          this.loginState = { type: 'success', message: session.message };
+        },
+        error: (error) => {
+          const message = error?.error?.error ?? 'Errore durante il login tecnico.';
+          this.loginState = { type: 'error', message };
+        },
+      });
+  }
+
+  ngOnInit(): void {
+    this.loadDashboardStats();
+  }
+
+  private loadDashboardStats(): void {
+    this.dashboardService.getDashboard().subscribe({
+      next: (stats) => {
+        this.dashboardStats = stats;
+      },
+      error: () => {
+        this.dashboardStats = {
+          interventions: 0,
+          techniciansOnline: 0,
+          shiftsCompleted: 0,
+          activeTickets: 0,
+          cancelledTickets: 0,
+          lastUpdated: new Date().toISOString(),
+        };
+      },
+    });
   }
 }
