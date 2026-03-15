@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Observable } from 'rxjs';
+import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
 import { Technician, TechnicianService } from '../../services/technician.service';
 
@@ -11,13 +12,31 @@ import { Technician, TechnicianService } from '../../services/technician.service
   imports: [CommonModule, FormsModule],
   template: `
     <div class="work-order-list-container">
-      <ng-container *ngIf="workOrders$ | async as workOrders">
+      <ng-container *ngIf="filteredWorkOrders$ | async as workOrders">
         <div class="list-header">
           <div>
             <p class="header-label">Ordini salvati</p>
             <h3 class="header-title">Seleziona un turno</h3>
           </div>
           <span class="orders-count">{{ workOrders.length }} elementi</span>
+        </div>
+
+        <div class="header-controls">
+          <input
+            class="search-field"
+            type="search"
+            placeholder="Cerca codice, treno o turno"
+            [(ngModel)]="searchTerm"
+            (ngModelChange)="updateSearchTerm($event)"
+          />
+          <label class="completed-toggle">
+            <input
+              type="checkbox"
+              [checked]="showCompletedOrders"
+              (change)="toggleShowCompletedOrders($event.target.checked)"
+            />
+            <span>Mostra ODL completati</span>
+          </label>
         </div>
 
         <div class="new-order-section">
@@ -57,7 +76,7 @@ import { Technician, TechnicianService } from '../../services/technician.service
               </div>
             </div>
             <div class="order-footer">
-            <div class="order-meta">
+              <div class="order-meta">
               <span>{{ order.tasks.length }} lavorazioni</span>
               <span>{{ order.shift }}</span>
             </div>
@@ -105,6 +124,40 @@ import { Technician, TechnicianService } from '../../services/technician.service
       .orders-count {
         font-size: 12px;
         color: var(--text-secondary);
+      }
+
+      .header-controls {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding-top: 12px;
+      }
+
+      .search-field {
+        flex: 1;
+        min-width: 220px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 13px;
+      }
+
+      .completed-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+      }
+
+      .completed-toggle input {
+        width: 16px;
+        height: 16px;
       }
 
       .new-order-section {
@@ -295,6 +348,7 @@ import { Technician, TechnicianService } from '../../services/technician.service
 })
 export class WorkOrderListComponent implements OnInit {
   workOrders$: Observable<WorkOrder[]>;
+  filteredWorkOrders$: Observable<WorkOrder[]>;
   technicians$: Observable<Technician[]>;
   trainNumber = '';
   shift = '';
@@ -304,13 +358,26 @@ export class WorkOrderListComponent implements OnInit {
     'Notte (22-06)',
   ];
   creatingOrder = false;
+  searchTerm = '';
+  showCompletedOrders = false;
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
   private technicianService = inject(TechnicianService);
+  private readonly searchTerm$ = new BehaviorSubject('');
+  private readonly showCompleted$ = new BehaviorSubject(false);
 
   constructor() {
     this.workOrders$ = this.workOrderService.getWorkOrders();
     this.technicians$ = this.technicianService.getTechnicians();
+    this.filteredWorkOrders$ = combineLatest({
+      orders: this.workOrders$,
+      searchValue: this.searchTerm$,
+      showCompleted: this.showCompleted$,
+    }).pipe(
+      map(({ orders, searchValue, showCompleted }) =>
+        this.filterOrders(orders, searchValue, showCompleted),
+      ),
+    );
     this.setDefaultShift();
   }
 
@@ -355,6 +422,41 @@ export class WorkOrderListComponent implements OnInit {
       completed: 'Completato',
     };
     return map[status];
+  }
+
+  updateSearchTerm(value: string): void {
+    this.searchTerm = value;
+    this.searchTerm$.next(value);
+  }
+
+  toggleShowCompletedOrders(show: boolean): void {
+    this.showCompletedOrders = show;
+    this.showCompleted$.next(show);
+  }
+
+  private filterOrders(
+    orders: WorkOrder[],
+    searchValue: string,
+    showCompleted: boolean,
+  ): WorkOrder[] {
+    const normalized = searchValue.trim().toLowerCase();
+    return orders.filter((order) => {
+      const matchesSearch =
+        !normalized ||
+        order.trainNumber.toLowerCase().includes(normalized) ||
+        order.codiceODL.toLowerCase().includes(normalized) ||
+        order.shift.toLowerCase().includes(normalized);
+      if (!matchesSearch) {
+        return false;
+      }
+      if (showCompleted) {
+        return true;
+      }
+      if (normalized) {
+        return true;
+      }
+      return order.status !== 'completed';
+    });
   }
 
   private getCurrentShift(): string {
