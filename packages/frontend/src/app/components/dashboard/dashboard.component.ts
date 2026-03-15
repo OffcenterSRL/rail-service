@@ -107,16 +107,6 @@ import {
           </div>
         </div>
 
-        <!-- Work Order Code -->
-        <div class="work-order-code">
-          <span class="code-icon">🔧</span>
-          <span class="code-text"
-            ><strong>Codice per il tecnico:</strong>
-            {{ selectedOrder.codiceODL }} - il tecnico lo inserisce nella vista
-            Tecnico</span
-          >
-        </div>
-
         <!-- New Task Form -->
         <div class="section new-task-panel">
           <div class="section-header">
