@@ -3,6 +3,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Observable } from 'rxjs';
 import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
+import { Technician, TechnicianService } from '../../services/technician.service';
 
 @Component({
   selector: 'app-work-order-list',
@@ -31,11 +32,13 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
               {{ option }}
             </option>
           </select>
-          <button
-            (click)="createOrder()"
-            class="btn-create"
-            [disabled]="creatingOrder"
-          >
+          <select [(ngModel)]="selectedTechnicianId" class="select-field">
+            <option value="">Assegna tecnico</option>
+            <option *ngFor="let tech of technicians$ | async" [value]="tech.id">
+              {{ tech.nickname || tech.name }} · {{ tech.matricola }}
+            </option>
+          </select>
+          <button (click)="createOrder()" class="btn-create" [disabled]="creatingOrder">
             {{ creatingOrder ? 'Creazione...' : 'Nuovo +' }}
           </button>
         </div>
@@ -60,6 +63,9 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
               </div>
             </div>
             <div class="order-footer">
+              <div class="order-assignment">
+                {{ order.assignedTechnician ?? 'Tecnico da assegnare' }}
+              </div>
               <div class="order-meta">
                 <span>{{ order.tasks.length }} lavorazioni</span>
                 <span>{{ order.shift }}</span>
@@ -111,9 +117,9 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
       }
 
       .new-order-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
         padding: 16px 0;
       }
 
@@ -230,6 +236,13 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
         gap: 12px;
       }
 
+      .order-assignment {
+        font-size: 12px;
+        color: var(--text-secondary);
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+      }
+
       .order-meta {
         display: flex;
         gap: 12px;
@@ -281,6 +294,7 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
 })
 export class WorkOrderListComponent implements OnInit {
   workOrders$: Observable<WorkOrder[]>;
+  technicians$: Observable<Technician[]>;
   trainNumber = '';
   shift = '';
   readonly shiftOptions = [
@@ -289,11 +303,14 @@ export class WorkOrderListComponent implements OnInit {
     'Notte (22-06)',
   ];
   creatingOrder = false;
+  selectedTechnicianId = '';
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
+  private technicianService = inject(TechnicianService);
 
   constructor() {
     this.workOrders$ = this.workOrderService.getWorkOrders();
+    this.technicians$ = this.technicianService.getTechnicians();
     this.setDefaultShift();
   }
 

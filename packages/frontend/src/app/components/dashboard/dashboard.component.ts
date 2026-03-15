@@ -1,11 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import {
   FormBuilder,
   FormGroup,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
+import { Observable, Subscription } from 'rxjs';
+import { TechnicianService, Technician } from '../../services/technician.service';
 import {
   Task,
   WorkOrder,
@@ -27,18 +29,53 @@ import {
 
       <!-- Work order details -->
       <ng-container *ngIf="selectedOrder">
-        <!-- Work Order Header -->
-        <div class="work-order-header">
-          <div>
-            <h1 class="train-number">Treno {{ selectedOrder.trainNumber }}</h1>
-            <p class="work-order-info">
-              {{ selectedOrder.codiceODL }} · Turno: {{ selectedOrder.shift }}
-            </p>
+        <div class="selected-order-card">
+          <div class="selected-order-top">
+            <div>
+              <h1 class="train-number">Treno {{ selectedOrder.trainNumber }}</h1>
+              <p class="work-order-info">
+                {{ selectedOrder.codiceODL }} · Turno: {{ selectedOrder.shift }}
+              </p>
+            </div>
+            <div class="header-actions">
+              <button class="btn btn-secondary">📋 Copia codice tecnico</button>
+              <button class="btn btn-primary">📤 Esporta turno</button>
+              <button
+                class="btn btn-danger"
+                type="button"
+                (click)="cancelWorkOrder()"
+                [disabled]="!canCancelOrder() || orderCancellationInProgress"
+              >
+                {{ orderCancellationInProgress ? 'Annullamento...' : '🗑️ Annulla ODL' }}
+              </button>
+            </div>
           </div>
-          <div class="header-actions">
-            <button class="btn btn-secondary">📋 Copia codice tecnico</button>
-            <button class="btn btn-primary">📤 Esporta turno</button>
-            <button class="btn btn-danger">🗑️</button>
+          <div class="order-meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Stato</span>
+              <span class="status-pill" [ngClass]="selectedOrder.status">{{ selectedOrder.status | titlecase }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Tecnico</span>
+              <span class="meta-value">{{ selectedOrder.assignedTechnician || 'Non assegnato' }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Creato il</span>
+              <span class="meta-value">{{ selectedOrder.createdAt | date: 'short' }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Codice ODL</span>
+              <span class="meta-value">{{ selectedOrder.codiceODL }}</span>
+            </div>
+          </div>
+          <div class="order-progress">
+            <div class="progress-label">
+              <span>Avanzamento</span>
+              <span>{{ getCompletionRate() }}%</span>
+            </div>
+            <div class="progress-track">
+              <span class="progress-bar" [style.width.%]="getCompletionRate()"></span>
+            </div>
           </div>
         </div>
 
@@ -85,44 +122,55 @@ import {
         </div>
 
         <!-- New Task Form -->
-        <div class="section">
+        <div class="section new-task-panel">
           <div class="section-header">
-            <span class="section-title">+ NUOVA LAVORAZIONE</span>
+            <div>
+              <span class="section-label">Nuova lavorazione</span>
+              <p class="section-subtitle">
+                Inserisci il dettaglio e assegna un tecnico prima di confermare.
+              </p>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot"></span>
+              In attesa di compilazione
+            </div>
           </div>
-          <form
-            [formGroup]="newTaskForm"
-            (ngSubmit)="onAddTask()"
-            class="task-form"
-          >
-            <div class="form-row">
-              <div class="form-group full-width">
+          <form [formGroup]="newTaskForm" (ngSubmit)="onAddTask()" class="task-form">
+        <div class="form-grid">
+              <label class="field-group">
+                <span class="field-label">Descrizione attività</span>
                 <input
                   type="text"
-                  placeholder="Descrizione attività"
+                  placeholder="Esempio: Verifica impianto frenante"
                   formControlName="description"
                   class="task-input"
                 />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
+              </label>
+              <label class="field-group">
+                <span class="field-label">Priorità</span>
                 <select formControlName="priority" class="task-input">
                   <option value="preventiva">Preventiva</option>
                   <option value="correttiva">Correttiva</option>
                   <option value="urgente">Urgente</option>
                 </select>
-              </div>
-              <div class="form-group">
-                <input
-                  type="text"
-                  placeholder="Tecnico assegnato"
-                  formControlName="assignedTechnician"
-                  class="task-input"
-                />
-              </div>
-              <div class="form-group">
-                <button type="submit" class="btn btn-add">Aggiungi</button>
-              </div>
+              </label>
+              <label class="field-group">
+                <span class="field-label">Tecnico assegnato</span>
+                <select formControlName="assignedTechnicianId" class="task-input">
+                  <option value="" disabled>Seleziona un tecnico</option>
+                  <option *ngFor="let tech of technicians$ | async" [value]="tech.id">
+                    {{ tech.name }} · {{ tech.team }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div class="form-actions">
+              <span class="helper-text">
+                Gli ordini vengono salvati localmente finché non premi «Aggiungi».
+              </span>
+              <button type="submit" class="btn btn-add" [disabled]="newTaskForm.invalid">
+                Aggiungi lavorazione
+              </button>
             </div>
           </form>
         </div>
@@ -142,7 +190,7 @@ import {
               <div class="task-title">{{ task.description }}</div>
               <div class="task-meta">
                 {{ task.priority | titlecase }} · Assegnata a:
-                {{ task.assignedTechnician }}
+                {{ task.assignedTechnicianName }}
               </div>
             </div>
             <div class="task-status">{{ task.status }}</div>
@@ -195,16 +243,22 @@ import {
         margin: 0;
       }
 
-      .work-order-header {
+      .selected-order-card {
+        background: linear-gradient(180deg, rgba(12, 15, 30, 0.95), rgba(20, 26, 46, 0.95));
+        border-radius: 26px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 24px;
+        box-shadow: 0 25px 45px rgba(1, 7, 20, 0.75);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .selected-order-top {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
         gap: 18px;
-        padding: 16px 20px;
-        border-radius: 20px;
-        background: linear-gradient(180deg, rgba(10, 12, 30, 0.95), rgba(33, 35, 53, 0.95));
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: var(--glass-shadow);
       }
 
       .train-number {
@@ -217,6 +271,83 @@ import {
         font-size: 13px;
         color: var(--text-secondary);
         margin: 0;
+      }
+
+      .order-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+      }
+
+      .meta-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .meta-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-secondary);
+      }
+
+      .meta-value {
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .status-pill.pending {
+        color: #ffd36b;
+      }
+
+      .status-pill.active {
+        color: #60a5fa;
+      }
+
+      .status-pill.completed {
+        color: #6ee4a4;
+      }
+
+      .order-progress {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .progress-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      .progress-track {
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #7bc7ff, #4b7bf5);
+        transition: width 0.3s ease;
       }
 
       .header-actions {
@@ -358,6 +489,12 @@ import {
         gap: 18px;
       }
 
+      .new-task-panel {
+        background: linear-gradient(180deg, rgba(14, 19, 36, 0.92), rgba(22, 30, 50, 0.95));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 22px;
+      }
+
       .section-header {
         display: flex;
         justify-content: space-between;
@@ -366,40 +503,90 @@ import {
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       }
 
-      .section-title {
+      .new-task-panel .section-header {
+        padding-bottom: 0;
+        border-bottom: none;
+        margin-bottom: 10px;
+      }
+
+      .section-label {
         font-size: 12px;
-        font-weight: 600;
+        letter-spacing: 2px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
         color: var(--text-secondary);
+      }
+
+      .section-subtitle {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 4px 0 0;
+      }
+
+      .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent-lime);
+      }
+
+      .status-dot.active {
+        background: #7bc7ff;
       }
 
       .task-form {
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 16px;
       }
 
-      .form-row {
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+      }
+
+      .field-group {
         display: flex;
-        gap: 12px;
-        align-items: flex-end;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .field-label {
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+
+      .form-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         flex-wrap: wrap;
+        gap: 12px;
       }
 
-      .form-group {
-        flex: 1;
-        min-width: 200px;
-      }
-
-      .form-group.full-width {
-        flex: 1 1 100%;
+      .helper-text {
+        font-size: 12px;
+        color: var(--text-muted);
       }
 
       .task-input {
         border-radius: 14px;
         background: rgba(17, 22, 35, 0.9);
         border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 12px;
+        color: var(--text-primary);
       }
 
       .btn-add {
@@ -456,7 +643,7 @@ import {
       }
 
       @media (max-width: 768px) {
-        .work-order-header {
+        .selected-order-top {
           flex-direction: column;
           align-items: flex-start;
         }
@@ -473,36 +660,53 @@ import {
     `,
   ],
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   newTaskForm: FormGroup;
   selectedOrder: WorkOrder | null = null;
+  technicians$: Observable<Technician[]>;
+  technicianList: Technician[] = [];
+  private techniciansSub?: Subscription;
+  orderCancellationInProgress = false;
 
   constructor(
     private fb: FormBuilder,
     private workOrderService: WorkOrderService,
+    private technicianService: TechnicianService,
   ) {
     this.newTaskForm = this.fb.group({
       description: ['', Validators.required],
       priority: ['preventiva', Validators.required],
-      assignedTechnician: ['', Validators.required],
+      assignedTechnicianId: ['', Validators.required],
+    });
+    this.technicians$ = this.technicianService.getTechnicians();
+    this.techniciansSub = this.technicians$.subscribe((list) => {
+      this.technicianList = list;
     });
   }
 
   ngOnInit(): void {
     this.workOrderService.getSelectedWorkOrder().subscribe((order) => {
       this.selectedOrder = order;
-      this.newTaskForm.reset({
-        description: '',
-        priority: 'preventiva',
-        assignedTechnician: '',
-      });
+    this.newTaskForm.reset({
+      description: '',
+      priority: 'preventiva',
+      assignedTechnicianId: '',
+    });
     });
   }
 
   onAddTask(): void {
     if (this.newTaskForm.valid && this.selectedOrder?.id) {
-      const task = this.newTaskForm.value as Omit<Task, 'id' | 'status'>;
-      this.workOrderService.addTask(this.selectedOrder.id, task);
+      const technicianId = this.newTaskForm.value.assignedTechnicianId as string;
+      const technician = this.technicianList.find((tech) => tech.id === technicianId);
+      const taskPayload: Omit<Task, 'id' | 'status'> = {
+        description: this.newTaskForm.value.description,
+        priority: this.newTaskForm.value.priority,
+        assignedTechnicianId: technicianId,
+        assignedTechnicianName: technician?.name ?? '',
+        assignedTechnicianNickname: technician?.nickname ?? technician?.name ?? '',
+      };
+      this.workOrderService.addTask(this.selectedOrder.id, taskPayload);
       this.workOrderService.saveWorkOrders();
       this.newTaskForm.reset({
         description: '',
@@ -512,8 +716,49 @@ export class DashboardComponent implements OnInit {
     }
   }
 
+  getCompletionRate(): number {
+    if (!this.selectedOrder) {
+      return 0;
+    }
+    const total = this.selectedOrder.tasks.length;
+    if (!total) {
+      return 0;
+    }
+    const resolved = this.getTasksByStatus('risolte');
+    return Math.round((resolved / total) * 100);
+  }
+
   getTasksByStatus(status: string): number {
     if (!this.selectedOrder) return 0;
     return this.selectedOrder.tasks.filter((t) => t.status === status).length;
+  }
+
+  ngOnDestroy(): void {
+    this.techniciansSub?.unsubscribe();
+  }
+
+  cancelWorkOrder(): void {
+    if (!this.selectedOrder || !this.canCancelOrder()) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `Sei sicuro di voler annullare l'ordine ${this.selectedOrder.codiceODL}?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    this.orderCancellationInProgress = true;
+    this.workOrderService.cancelWorkOrder(this.selectedOrder.id).subscribe({
+      next: () => {
+        this.orderCancellationInProgress = false;
+      },
+      error: () => {
+        this.orderCancellationInProgress = false;
+      },
+    });
+  }
+
+  canCancelOrder(): boolean {
+    return !!this.selectedOrder && this.selectedOrder.status !== 'completed';
   }
 }

@@ -1,18 +1,29 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterOutlet } from '@angular/router';
+import { Router, RouterOutlet } from '@angular/router';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
+import { AdminComponent } from './components/admin/admin.component';
 import { APP_VERSION } from './app-version';
 import { HttpClientModule } from '@angular/common/http';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
-import { AuthService } from './services/auth.service';
+import { AuthService, TechnicianSession } from './services/auth.service';
 import { TechnicianPresenceService } from './services/technician-presence.service';
+import { Task, WorkOrder, WorkOrderService } from './services/work-order.service';
+import { Subscription } from 'rxjs';
+
+type AssignedTask = {
+  description: string;
+  priority: Task['priority'];
+  status: Task['status'];
+  orderCode: string;
+  trainNumber: string;
+};
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, HttpClientModule, RouterOutlet, WorkOrderListComponent],
+  imports: [CommonModule, FormsModule, HttpClientModule, RouterOutlet, WorkOrderListComponent, AdminComponent],
   template: `
     <div class="app-shell">
       <header class="header">
@@ -38,6 +49,13 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
               >
                 Tecnico
               </button>
+              <button
+                class="view-btn"
+                [class.active]="viewMode === 'admin'"
+                (click)="setView('admin')"
+              >
+                Admin
+              </button>
             </div>
           </div>
         </div>
@@ -49,9 +67,13 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
             <p class="hero-label">Dashboard Operativa</p>
             <h1>ETR700-12 • Turno Mattina</h1>
             <p class="hero-subtitle">
-              {{ viewMode === 'capoturno'
-                ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
-                : 'Tecnico collegato · inserisci credenziali per accedere' }}
+              {{
+                viewMode === 'capoturno'
+                  ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
+                  : viewMode === 'tecnico'
+                  ? 'Tecnico collegato · inserisci credenziali per accedere'
+                  : 'Admin view · aggiorna i tecnici e i parametri operativi'
+              }}
             </p>
           </div>
           <div class="hero-metrics">
@@ -94,49 +116,85 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
       </section>
 
       <div class="main-layout">
-        <ng-container *ngIf="viewMode === 'capoturno'; else tecnicoView">
-          <aside class="sidebar">
-            <div class="sidebar-content">
-              <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
-              <app-work-order-list></app-work-order-list>
-            </div>
-          </aside>
+        <ng-container [ngSwitch]="viewMode">
+          <ng-container *ngSwitchCase="'capoturno'">
+            <aside class="sidebar">
+              <div class="sidebar-content">
+                <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
+                <app-work-order-list></app-work-order-list>
+              </div>
+            </aside>
+            <main class="main-content">
+              <router-outlet></router-outlet>
+            </main>
+          </ng-container>
 
-          <main class="main-content">
-            <router-outlet></router-outlet>
-          </main>
-        </ng-container>
-        <ng-template #tecnicoView>
-          <div class="tecnico-login">
-            <div class="login-card">
-              <h2>Login Tecnico</h2>
-              <p>Inserisci il codice ODL, il tuo nome e la matricola per accedere.</p>
-              <div class="field">
-                <label>Codice ODL</label>
-                <input type="text" [(ngModel)]="tecOdL" placeholder="ODL-XXXXXX" />
+          <ng-container *ngSwitchCase="'tecnico'">
+            <div class="tecnico-panel">
+              <div class="panel-shell">
+                <div class="panel-heading">
+                  <h2>Login Tecnico</h2>
+                  <span class="panel-subtitle">Accedi con nickname e matricola per vedere le tue lavorazioni.</span>
+                </div>
+                <p
+                  *ngIf="loginState"
+                  class="login-message"
+                  [class.success]="loginState.type === 'success'"
+                  [class.error]="loginState.type === 'error'"
+                >
+                  {{ loginState.message }}
+                </p>
+                <ng-container *ngIf="!technicianSession">
+                  <div class="field">
+                    <label>Nickname</label>
+                    <input type="text" [(ngModel)]="tecNickname" placeholder="es. Carlo" />
+                  </div>
+                  <div class="field">
+                    <label>Matricola</label>
+                    <input type="text" [(ngModel)]="tecMatricola" placeholder="123456" />
+                  </div>
+                  <button class="btn btn-primary" (click)="loginTechnician()">Accedi come tecnico</button>
+                </ng-container>
+              <div *ngIf="technicianSession" class="assigned-tasks">
+                  <div class="assigned-header">
+                    <h3>Lavorazioni per {{ technicianSession.nickname }}</h3>
+                    <div class="assigned-actions">
+                      <button type="button" class="btn btn-secondary" (click)="toggleShowCompletedOrders()">
+                        {{ showCompletedOrders ? 'Nascondi ODL completati' : 'Mostra ODL completati' }}
+                      </button>
+                      <button type="button" class="btn btn-tertiary" (click)="logoutTechnician()">Esci</button>
+                    </div>
+                  </div>
+                  <div class="assigned-controls">
+                    <input
+                      type="search"
+                      [(ngModel)]="searchTerm"
+                      (ngModelChange)="updateSearchTerm($event)"
+                      placeholder="Cerca lavorazioni, treno o codice"
+                    />
+                  </div>
+                  <div *ngIf="assignedTasks.length === 0" class="task-empty">
+                    <p>Nessuna lavorazione assegnata per il momento.</p>
+                  </div>
+                  <div *ngFor="let item of assignedTasks" class="assigned-task">
+                    <div class="assigned-task-header">
+                      <span class="task-order">{{ item.orderCode }} · {{ item.trainNumber }}</span>
+                      <span class="task-status-pill">{{ item.status | uppercase }}</span>
+                    </div>
+                    <p class="task-description">{{ item.description }}</p>
+                    <span class="task-priority" [ngClass]="item.priority">{{ item.priority | titlecase }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="field">
-                <label>Nome e cognome</label>
-                <input type="text" [(ngModel)]="tecName" placeholder="Esempio: Mario Rossi" />
-              </div>
-              <div class="field">
-                <label>Matricola</label>
-                <input type="text" [(ngModel)]="tecMatricola" placeholder="123456" />
-              </div>
-              <button class="btn btn-primary" (click)="loginTechnician()">
-                Accedi come tecnico
-              </button>
-              <p
-                *ngIf="loginState"
-                class="login-message"
-                [class.success]="loginState.type === 'success'"
-                [class.error]="loginState.type === 'error'"
-              >
-                {{ loginState.message }}
-              </p>
             </div>
-          </div>
-        </ng-template>
+          </ng-container>
+
+          <ng-container *ngSwitchCase="'admin'">
+            <div class="admin-placeholder">
+              <app-admin></app-admin>
+            </div>
+          </ng-container>
+        </ng-container>
       </div>
       <footer class="app-footer">
         Versione {{ appVersion }}
@@ -149,6 +207,8 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
         display: block;
         min-height: 100vh;
         color: var(--text-primary);
+        background: radial-gradient(circle at top, rgba(124, 199, 255, 0.2), rgba(9, 13, 26, 0.95) 45%);
+        background-attachment: fixed;
       }
 
       .app-shell {
@@ -157,6 +217,8 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
         gap: 20px;
         min-height: 100vh;
         padding: 20px 0;
+        width: 100%;
+        box-sizing: border-box;
       }
 
       .header {
@@ -328,40 +390,56 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
         justify-content: center;
       }
 
-      .login-card {
-        background: rgba(16, 19, 32, 0.9);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        padding: 28px;
-        width: min(420px, 100%);
-        box-shadow: var(--glass-shadow);
-        text-align: left;
+      .tecnico-panel {
+        display: flex;
+        align-items: stretch;
+        justify-content: center;
+        min-height: calc(100vh - 200px);
+        padding: 0 24px;
+      }
+
+      .panel-shell {
+        flex: 1;
+        max-width: 960px;
+        background: rgba(12, 14, 28, 0.95);
+        padding: 32px;
+        border-radius: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 30px 75px rgba(2, 6, 18, 0.7);
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 18px;
       }
 
-      .login-card h2 {
+      .panel-heading h2 {
         margin: 0;
-        font-size: 22px;
+        font-size: 26px;
       }
 
-      .login-card .field {
+      .panel-subtitle {
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      .field {
         display: flex;
         flex-direction: column;
         gap: 6px;
       }
 
-      .login-card label {
+      .field label {
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 1px;
         color: var(--text-secondary);
       }
 
-      .login-card input {
+      .field input {
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.2);
+        color: var(--text-primary);
+        border-radius: 10px;
+        padding: 12px;
       }
 
       .login-message {
@@ -378,13 +456,13 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
         color: var(--error);
       }
 
-      .login-card .btn {
-        width: 100%;
+      .panel-shell .btn {
+        width: fit-content;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 12px 0;
-        border-radius: 12px;
+        padding: 14px 28px;
+        border-radius: 999px;
         font-weight: 600;
         font-size: 14px;
         border: none;
@@ -393,15 +471,121 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
         transition: transform 0.2s ease, box-shadow 0.2s ease;
       }
 
-      .login-card .btn-primary {
+      .panel-shell .btn-primary {
         background: linear-gradient(180deg, #7bc7ff, #4b6ef5);
         color: #02050c;
-        box-shadow: 0 10px 20px rgba(75, 110, 245, 0.35);
+        box-shadow: 0 12px 32px rgba(75, 110, 245, 0.35);
       }
 
-      .login-card .btn-primary:hover {
+      .panel-shell .btn-primary:hover {
         transform: translateY(-1px);
-        box-shadow: 0 12px 24px rgba(75, 110, 245, 0.45);
+        box-shadow: 0 14px 34px rgba(75, 110, 245, 0.35);
+      }
+
+      .panel-shell .btn-tertiary {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: var(--text-primary);
+      }
+
+      .assigned-tasks {
+        margin-top: 18px;
+        border-top: 1px dashed rgba(255, 255, 255, 0.25);
+        padding-top: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .assigned-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .assigned-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .assigned-task {
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 14px;
+        padding: 12px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .assigned-task-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .task-order {
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+      }
+
+      .task-status-pill {
+        font-size: 11px;
+        background: rgba(124, 199, 255, 0.2);
+        color: var(--text-primary);
+        padding: 4px 10px;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .task-description {
+        font-size: 14px;
+        color: var(--text-primary);
+        margin: 0;
+      }
+
+      .task-priority {
+        font-size: 11px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        color: #fff;
+        padding: 2px 10px;
+        border-radius: 999px;
+        align-self: flex-start;
+      }
+
+      .task-priority.preventiva {
+        background: rgba(90, 176, 255, 0.7);
+      }
+
+      .task-priority.correttiva {
+        background: rgba(255, 144, 65, 0.7);
+      }
+
+      .task-priority.urgente {
+        background: rgba(255, 77, 79, 0.8);
+      }
+
+      .task-empty {
+        border: 1px dashed rgba(255, 255, 255, 0.3);
+        border-radius: 14px;
+        padding: 12px 14px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      .assigned-controls input {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: var(--text-primary);
+        border-radius: 10px;
+        padding: 8px 12px;
       }
 
       .app-footer {
@@ -417,6 +601,10 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
         flex: 1;
         gap: 16px;
         min-height: 0;
+      }
+
+      .admin-placeholder {
+        width: 100%;
       }
 
       .sidebar {
@@ -546,12 +734,15 @@ import { TechnicianPresenceService } from './services/technician-presence.servic
     `,
   ],
 })
-export class AppComponent implements OnInit {
-  viewMode: 'capoturno' | 'tecnico' = 'capoturno';
-  tecOdL = '';
-  tecName = '';
+export class AppComponent implements OnInit, OnDestroy {
+  viewMode: 'capoturno' | 'tecnico' | 'admin' = 'capoturno';
+  tecNickname = '';
   tecMatricola = '';
   loginState: { type: 'success' | 'error'; message: string } | null = null;
+  technicianSession: TechnicianSession | null = null;
+  assignedTasks: AssignedTask[] = [];
+  searchTerm = '';
+  showCompletedOrders = false;
   appVersion = APP_VERSION;
   dashboardStats: DashboardStats = {
     interventions: 0,
@@ -563,29 +754,66 @@ export class AppComponent implements OnInit {
   };
   private dashboardService = inject(DashboardService);
   private authService = inject(AuthService);
+  private workOrderService = inject(WorkOrderService);
   private technicianPresenceService = inject(TechnicianPresenceService);
   technicianSnapshot$ = this.technicianPresenceService.snapshot$.asObservable();
+  private router = inject(Router);
+  private assignedTasksSub?: Subscription;
+  private workOrdersSnapshot: WorkOrder[] = [];
+  private readonly technicianStorageKey = 'rail-service.tech-session';
 
-  setView(mode: 'capoturno' | 'tecnico'): void {
+  setView(mode: 'capoturno' | 'tecnico' | 'admin'): void {
     this.viewMode = mode;
     this.loginState = null;
+    if (mode !== 'tecnico') {
+      this.clearTechnicianSession();
+    }
+    if (mode !== 'admin') {
+      this.router.navigateByUrl('/');
+    }
+  }
+
+  private clearTechnicianSession(): void {
+    this.assignedTasksSub?.unsubscribe();
+    this.assignedTasksSub = undefined;
+    this.assignedTasks = [];
+    this.technicianSession = null;
+  }
+
+  toggleShowCompletedOrders(): void {
+    this.showCompletedOrders = !this.showCompletedOrders;
+    if (this.technicianSession) {
+      this.updateAssignedTasksView(this.technicianSession.nickname.toLowerCase());
+    }
+  }
+
+  updateSearchTerm(term: string): void {
+    this.searchTerm = term;
+    if (this.technicianSession) {
+      this.updateAssignedTasksView(this.technicianSession.nickname.toLowerCase());
+    }
   }
 
   loginTechnician(): void {
-    if (!this.tecOdL || !this.tecName || !this.tecMatricola) {
-      this.loginState = { type: 'error', message: 'Compila tutti i campi per accedere.' };
+    if (!this.tecNickname || !this.tecMatricola) {
+      this.loginState = { type: 'error', message: 'Inserisci nickname e matricola per accedere.' };
       return;
     }
 
     this.authService
       .loginTechnician({
-        code: this.tecOdL,
-        name: this.tecName,
+        nickname: this.tecNickname,
         matricola: this.tecMatricola,
       })
       .subscribe({
         next: (session) => {
+          this.technicianSession = session;
           this.loginState = { type: 'success', message: session.message };
+          this.assignedTasksSub?.unsubscribe();
+          this.watchAssignedTasks(session.nickname);
+          this.persistTechnicianSession(session);
+          this.searchTerm = '';
+          this.showCompletedOrders = false;
         },
         error: (error) => {
           const message = error?.error?.error ?? 'Errore durante il login tecnico.';
@@ -596,6 +824,7 @@ export class AppComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadDashboardStats();
+    this.restoreTechnicianSession();
   }
 
   private loadDashboardStats(): void {
@@ -614,5 +843,108 @@ export class AppComponent implements OnInit {
         };
       },
     });
+  }
+
+  private watchAssignedTasks(nickname: string | null): void {
+    this.assignedTasksSub?.unsubscribe();
+    if (!nickname) {
+      this.assignedTasks = [];
+      return;
+    }
+    const normalized = nickname.toLowerCase();
+    this.assignedTasksSub = this.workOrderService.getWorkOrders().subscribe((orders) => {
+      this.workOrdersSnapshot = orders;
+      this.updateAssignedTasksView(normalized);
+    });
+  }
+
+  logoutTechnician(): void {
+    this.clearStoredTechnicianSession();
+    this.clearTechnicianSession();
+    this.tecNickname = '';
+    this.tecMatricola = '';
+    this.searchTerm = '';
+    this.showCompletedOrders = false;
+    this.loginState = { type: 'success', message: 'Logout completato.' };
+  }
+
+  private updateAssignedTasksView(normalized: string): void {
+    let tasks = this.workOrdersSnapshot.flatMap((order) =>
+      order.tasks
+        .filter((task: Task) => {
+          const nicknameMatch = task.assignedTechnicianNickname?.toLowerCase() === normalized;
+          const nameMatch = task.assignedTechnicianName?.toLowerCase() === normalized;
+          const includeOrder = this.showCompletedOrders || order.status !== 'completed';
+          return includeOrder && (nicknameMatch || nameMatch);
+        })
+        .map((task: Task) => ({
+            description: task.description,
+            priority: task.priority,
+            status: task.status,
+            orderCode: order.codiceODL,
+            trainNumber: order.trainNumber,
+        })),
+    );
+    const search = this.searchTerm.trim().toLowerCase();
+    if (search) {
+      tasks = tasks.filter(
+        (item) =>
+          item.description.toLowerCase().includes(search) ||
+          item.orderCode.toLowerCase().includes(search) ||
+          item.trainNumber.toLowerCase().includes(search),
+      );
+    }
+    this.assignedTasks = tasks;
+  }
+
+  private restoreTechnicianSession(): void {
+    const session = this.readStoredTechnicianSession();
+    if (!session) {
+      return;
+    }
+    this.technicianSession = session;
+    this.tecNickname = session.nickname;
+    this.tecMatricola = session.matricola;
+    this.loginState = { type: 'success', message: session.message ?? 'Sessione ripristinata.' };
+    this.searchTerm = '';
+    this.showCompletedOrders = false;
+    this.watchAssignedTasks(session.nickname);
+  }
+
+  private persistTechnicianSession(session: TechnicianSession): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(this.technicianStorageKey, JSON.stringify(session));
+    } catch {
+      // ignore
+    }
+  }
+
+  private readStoredTechnicianSession(): TechnicianSession | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      const raw = window.localStorage.getItem(this.technicianStorageKey);
+      if (!raw) {
+        return null;
+      }
+      return JSON.parse(raw) as TechnicianSession;
+    } catch {
+      return null;
+    }
+  }
+
+  private clearStoredTechnicianSession(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.removeItem(this.technicianStorageKey);
+  }
+
+  ngOnDestroy(): void {
+    this.assignedTasksSub?.unsubscribe();
   }
 }

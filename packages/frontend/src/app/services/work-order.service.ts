@@ -7,7 +7,9 @@ export interface Task {
   id: string;
   description: string;
   priority: 'preventiva' | 'correttiva' | 'urgente';
-  assignedTechnician: string;
+  assignedTechnicianId?: string;
+  assignedTechnicianName: string;
+  assignedTechnicianNickname: string;
   status: 'aperta' | 'in_progress' | 'risolte' | 'parziali';
 }
 
@@ -19,6 +21,7 @@ export interface WorkOrder {
   status: 'pending' | 'active' | 'completed';
   tasks: Task[];
   createdAt?: Date;
+  assignedTechnician?: string;
 }
 
 @Injectable({
@@ -28,10 +31,13 @@ export class WorkOrderService {
   private workOrders$ = new BehaviorSubject<WorkOrder[]>([]);
   private selectedWorkOrder$ = new BehaviorSubject<WorkOrder | null>(null);
   private tasksCache: Record<string, Task[]> = {};
+  private orderMeta: Record<string, { assignedTechnician?: string }> = {};
   private readonly tasksStorageKey = 'rail-work-order-tasks';
+  private readonly metaStorageKey = 'rail-work-order-meta';
 
   constructor(private ticketService: TicketService) {
     this.loadTasksCache();
+    this.loadOrderMetaCache();
     this.refreshWorkOrders();
   }
 
@@ -47,9 +53,33 @@ export class WorkOrderService {
     this.selectedWorkOrder$.next(workOrder);
   }
 
-  createWorkOrder(trainNumber: string, shift: string): Observable<WorkOrder> {
+  createWorkOrder(trainNumber: string, shift: string, assignedTechnician?: string): Observable<WorkOrder> {
     const payload = this.buildPayloadForShift(trainNumber, shift);
-    return this.ticketService.bookTicket(payload).pipe(map((ticket) => this.mergeTicket(ticket)));
+    return this.ticketService.bookTicket(payload).pipe(
+      map((ticket) => {
+        if (assignedTechnician) {
+          this.orderMeta[ticket._id] = { assignedTechnician };
+          this.persistOrderMetaCache();
+        }
+        return this.mergeTicket(ticket);
+      }),
+    );
+  }
+
+  cancelWorkOrder(workOrderId: string): Observable<WorkOrder> {
+    return this.ticketService.cancelTicket(workOrderId).pipe(
+      map((ticket) => {
+        const updated = this.mapTicketToWorkOrder(ticket, this.orderMeta[ticket._id]);
+        const others = this.workOrders$.value.filter((order) => order.id !== updated.id);
+        this.workOrders$.next([...others, updated]);
+        if (this.selectedWorkOrder$.value?.id === updated.id) {
+          this.selectWorkOrder(updated);
+        } else {
+          this.ensureSelection([...others, updated]);
+        }
+        return updated;
+      }),
+    );
   }
 
   addTask(workOrderId: string, task: Omit<Task, 'id' | 'status'>): void {
@@ -75,7 +105,9 @@ export class WorkOrderService {
   private refreshWorkOrders(): void {
     this.ticketService.getTickets().subscribe({
       next: (tickets) => {
-        const workOrders = tickets.map((ticket) => this.mapTicketToWorkOrder(ticket));
+        const workOrders = tickets.map((ticket) =>
+          this.mapTicketToWorkOrder(ticket, this.orderMeta[ticket._id]),
+        );
         this.workOrders$.next(workOrders);
         this.ensureSelection(workOrders);
       },
@@ -87,14 +119,14 @@ export class WorkOrderService {
   }
 
   private mergeTicket(ticket: TicketRecord): WorkOrder {
-    const order = this.mapTicketToWorkOrder(ticket);
+    const order = this.mapTicketToWorkOrder(ticket, this.orderMeta[ticket._id]);
     const others = this.workOrders$.value.filter((wo) => wo.id !== order.id);
     this.workOrders$.next([order, ...others]);
     this.selectWorkOrder(order);
     return order;
   }
 
-  private mapTicketToWorkOrder(ticket: TicketRecord): WorkOrder {
+  private mapTicketToWorkOrder(ticket: TicketRecord, meta?: { assignedTechnician?: string }): WorkOrder {
     const tasks = this.tasksCache[ticket._id] ?? [];
     return {
       id: ticket._id,
@@ -104,6 +136,7 @@ export class WorkOrderService {
       status: this.ticketStatusToWorkOrderStatus(ticket.status),
       tasks,
       createdAt: new Date(ticket.bookingDate),
+      assignedTechnician: meta?.assignedTechnician,
     };
   }
 
@@ -203,7 +236,7 @@ export class WorkOrderService {
       return;
     }
     try {
-      this.tasksCache = JSON.parse(serialized);
+      this.tasksCache = this.normalizeTasksCache(JSON.parse(serialized));
     } catch {
       this.tasksCache = {};
     }
@@ -214,5 +247,47 @@ export class WorkOrderService {
       return;
     }
     window.localStorage.setItem(this.tasksStorageKey, JSON.stringify(this.tasksCache));
+  }
+
+  private loadOrderMetaCache(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const serialized = window.localStorage.getItem(this.metaStorageKey);
+    if (!serialized) {
+      return;
+    }
+    try {
+      this.orderMeta = JSON.parse(serialized);
+    } catch {
+      this.orderMeta = {};
+    }
+  }
+
+  private persistOrderMetaCache(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(this.metaStorageKey, JSON.stringify(this.orderMeta));
+  }
+
+  private normalizeTasksCache(cache: Record<string, Task[]>): Record<string, Task[]> {
+    const normalized: Record<string, Task[]> = {};
+    Object.entries(cache).forEach(([key, tasks]) => {
+      normalized[key] = (tasks ?? []).map((task) => {
+        const legacy = task as Task & { assignedTechnician?: string };
+        return {
+          ...task,
+          assignedTechnicianId: legacy.assignedTechnicianId ?? legacy.assignedTechnician,
+          assignedTechnicianName: legacy.assignedTechnicianName ?? legacy.assignedTechnician ?? '',
+          assignedTechnicianNickname:
+            (legacy as Task & { assignedTechnicianNickname?: string }).assignedTechnicianNickname ??
+            legacy.assignedTechnician ??
+            legacy.assignedTechnicianName ??
+            '',
+        };
+      });
+    });
+    return normalized;
   }
 }

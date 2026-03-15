@@ -4,10 +4,9 @@ import { map, Observable } from 'rxjs';
 import { API_BASE_URL } from '../api.config';
 
 export interface TechnicianSession {
-  code: string;
   name: string;
+  nickname: string;
   matricola: string;
-  shift: string;
   team: string;
   message: string;
 }
@@ -19,8 +18,7 @@ export class AuthService {
   constructor(private http: HttpClient) {}
 
   loginTechnician(payload: {
-    code: string;
-    name: string;
+    nickname: string;
     matricola: string;
   }): Observable<TechnicianSession> {
     return this.http

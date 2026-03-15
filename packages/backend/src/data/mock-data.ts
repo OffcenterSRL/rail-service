@@ -23,10 +23,114 @@ export interface DashboardSummary {
   lastUpdated: string;
 }
 
-export const fallbackTechnicians: Record<string, { shift: string; team: string }> = {
-  'ODL-ETR700-12': { shift: 'Mattina (06-14)', team: 'Squadra Nord' },
-  'ODL-ETR700-13': { shift: 'Pomeriggio (14-22)', team: 'Squadra Centrale' },
-  'ODL-ETR1000-01': { shift: 'Notte (22-06)', team: 'Squadra Sud' },
+export interface TechnicianRecord {
+  id: string;
+  name: string;
+  nickname: string;
+  matricola: string;
+  team: string;
+}
+
+export interface TechnicianPayload {
+  id?: string;
+  name: string;
+  nickname?: string;
+  matricola: string;
+  team: string;
+}
+
+let technicianRegistry: Record<string, TechnicianRecord> = {
+  'tech-1': {
+    id: 'tech-1',
+    name: 'Carlo Marin',
+    nickname: 'Carlo',
+    matricola: 'C-1001',
+    team: 'Squadra Nord',
+  },
+  'tech-2': {
+    id: 'tech-2',
+    name: 'Luisa Ferri',
+    nickname: 'Lu',
+    matricola: 'L-1002',
+    team: 'Squadra Centrale',
+  },
+  'tech-3': {
+    id: 'tech-3',
+    name: 'Marco Rinaldi',
+    nickname: 'Marco',
+    matricola: 'M-1003',
+    team: 'Squadra Sud',
+  },
+};
+
+const normalizeId = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 12);
+};
+
+export const getTechnicianList = (): TechnicianRecord[] => Object.values(technicianRegistry);
+
+export const setTechnicianList = (list: TechnicianRecord[]): void => {
+  technicianRegistry = {};
+  list.forEach((tech) => {
+    const record = prepareTechnicianRecord(tech, tech.id);
+    if (record) {
+      technicianRegistry[record.id] = record;
+    }
+  });
+};
+
+export const prepareTechnicianRecord = (payload: TechnicianPayload, idOverride?: string): TechnicianRecord | null => {
+  const trimmedName = payload.name?.trim();
+  const trimmedMatricola = payload.matricola?.trim();
+  const team = payload.team?.trim() ?? '';
+  if (!trimmedName || !trimmedMatricola || !team) {
+    return null;
+  }
+  const normalized = normalizeId(trimmedName);
+  const fallbackId = normalized || `tech-${Date.now()}`;
+  const id = idOverride ?? payload.id ?? fallbackId;
+  return {
+    id,
+    name: trimmedName,
+    nickname: payload.nickname?.trim() || trimmedName,
+    matricola: trimmedMatricola,
+    team,
+  };
+};
+
+export const createTechnicianRecord = (payload: TechnicianPayload): TechnicianRecord | null => {
+const record = prepareTechnicianRecord(payload);
+  if (!record) {
+    return null;
+  }
+  technicianRegistry[record.id] = record;
+  return record;
+};
+
+export const updateTechnicianRecord = (id: string, payload: TechnicianPayload): TechnicianRecord | null => {
+  if (!technicianRegistry[id]) {
+    return null;
+  }
+  const record = prepareTechnicianRecord(payload, id);
+  if (!record) {
+    return null;
+  }
+  technicianRegistry[id] = record;
+  return record;
+};
+
+export const deleteTechnicianRecord = (id: string): TechnicianRecord | null => {
+  const record = technicianRegistry[id];
+  if (!record) {
+    return null;
+  }
+  delete technicianRegistry[id];
+  return record;
 };
 
 export const buildDashboardSummary = (tickets: TicketRecord[]): DashboardSummary => {

@@ -1,30 +1,37 @@
 import { WebSocket, WebSocketServer } from 'ws';
-import { fallbackTechnicians } from '../data/mock-data';
+import { getTechnicianList } from '../data/mock-data';
 
 export interface TechnicianPresencePayload {
   techniciansOnline: number;
-  active: Array<{ codiceODL: string; shift: string; team: string }>;
+  active: Array<{ id: string; name: string; team: string }>;
   updatedAt: string;
 }
 
 const buildPresenceSnapshot = (): TechnicianPresencePayload => {
-  const entries = Object.entries(fallbackTechnicians);
+  const entries = getTechnicianList();
+  if (!entries.length) {
+    return {
+      techniciansOnline: 0,
+      active: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
   const active = entries
     .filter(() => Math.random() > 0.25)
-    .map(([codiceODL, info]) => ({
-      codiceODL,
-      shift: info.shift,
+    .map((info) => ({
+      id: info.id,
+      name: info.name,
       team: info.team,
     }));
 
   if (active.length < 4) {
     const missing = 4 - active.length;
     for (let i = 0; i < missing; i += 1) {
-      const [codiceODL, info] = entries[i % entries.length];
-      if (!active.find((tech) => tech.codiceODL === codiceODL)) {
+      const info = entries[i % entries.length];
+      if (!active.find((tech) => tech.id === info.id)) {
         active.push({
-          codiceODL,
-          shift: info.shift,
+          id: info.id,
+          name: info.name,
           team: info.team,
         });
       }
