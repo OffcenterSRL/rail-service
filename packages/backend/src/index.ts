@@ -1,8 +1,11 @@
 import express from 'express';
+import http from 'node:http';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { WebSocketServer } from 'ws';
 import { connectDatabase } from './config/database';
 import apiRoutes from './routes/api.routes';
+import { attachTechnicianPresenceStream } from './services/technician-presence.service';
 
 dotenv.config();
 
@@ -24,6 +27,10 @@ app.get('/health', (req, res) => {
 app.use('/api', apiRoutes);
 
 // Start Server
-app.listen(PORT, () => {
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws/technicians' });
+attachTechnicianPresenceStream(wss);
+
+server.listen(PORT, () => {
   console.log(`🚂 Server running on port ${PORT}`);
 });

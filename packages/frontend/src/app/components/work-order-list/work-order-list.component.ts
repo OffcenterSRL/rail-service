@@ -31,7 +31,13 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
               {{ option }}
             </option>
           </select>
-          <button (click)="createOrder()" class="btn-create">Nuovo +</button>
+          <button
+            (click)="createOrder()"
+            class="btn-create"
+            [disabled]="creatingOrder"
+          >
+            {{ creatingOrder ? 'Creazione...' : 'Nuovo +' }}
+          </button>
         </div>
 
         <div *ngIf="workOrders.length > 0; else emptyState" class="orders-list">
@@ -48,11 +54,16 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
               </span>
             </div>
             <div class="order-info">
-              {{ order.codiceODL }}
+              <div>{{ order.codiceODL }}</div>
+              <div class="order-created">
+                Creato {{ order.createdAt | date: 'short' }}
+              </div>
             </div>
             <div class="order-footer">
-              <span class="order-count">{{ order.tasks.length }} lavorazioni</span>
-              <span class="order-meta">{{ order.shift }}</span>
+              <div class="order-meta">
+                <span>{{ order.tasks.length }} lavorazioni</span>
+                <span>{{ order.shift }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -206,9 +217,22 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
         margin-bottom: 10px;
       }
 
+      .order-created {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
+
       .order-footer {
         display: flex;
         justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .order-meta {
+        display: flex;
+        gap: 12px;
         font-size: 12px;
         color: var(--text-muted);
       }
@@ -264,6 +288,7 @@ export class WorkOrderListComponent implements OnInit {
     'Pomeriggio (14-22)',
     'Notte (22-06)',
   ];
+  creatingOrder = false;
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
 
@@ -279,13 +304,23 @@ export class WorkOrderListComponent implements OnInit {
   }
 
   createOrder(): void {
-    if (this.trainNumber.trim() && this.shift.trim()) {
-      this.workOrderService.createWorkOrder(this.trainNumber, this.shift);
-      this.trainNumber = '';
-      this.shift = '';
-      this.workOrderService.saveWorkOrders();
-      this.setDefaultShift();
+    if (!this.trainNumber.trim() || !this.shift.trim()) {
+      return;
     }
+
+    this.creatingOrder = true;
+    this.workOrderService.createWorkOrder(this.trainNumber, this.shift).subscribe({
+      next: () => {
+        this.trainNumber = '';
+        this.shift = '';
+        this.workOrderService.saveWorkOrders();
+        this.setDefaultShift();
+        this.creatingOrder = false;
+      },
+      error: () => {
+        this.creatingOrder = false;
+      },
+    });
   }
 
   selectOrder(order: WorkOrder): void {

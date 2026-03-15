@@ -501,7 +501,7 @@ export class DashboardComponent implements OnInit {
 
   onAddTask(): void {
     if (this.newTaskForm.valid && this.selectedOrder?.id) {
-      const task: Task = this.newTaskForm.value;
+      const task = this.newTaskForm.value as Omit<Task, 'id' | 'status'>;
       this.workOrderService.addTask(this.selectedOrder.id, task);
       this.workOrderService.saveWorkOrders();
       this.newTaskForm.reset({

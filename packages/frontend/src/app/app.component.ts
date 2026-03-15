@@ -7,6 +7,7 @@ import { APP_VERSION } from './app-version';
 import { HttpClientModule } from '@angular/common/http';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
 import { AuthService } from './services/auth.service';
+import { TechnicianPresenceService } from './services/technician-presence.service';
 
 @Component({
   selector: 'app-root',
@@ -43,27 +44,51 @@ import { AuthService } from './services/auth.service';
       </header>
 
       <section class="hero-strip">
-        <div class="hero-copy">
-          <p class="hero-label">Dashboard Operativa</p>
-          <h1>ETR700-12 • Turno Mattina</h1>
-          <p class="hero-subtitle">
-            {{ viewMode === 'capoturno'
-              ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
-              : 'Tecnico collegato · inserisci credenziali per accedere' }}
-          </p>
-        </div>
-        <div class="hero-metrics">
-          <div class="metric-card">
-            <span class="metric-value">{{ dashboardStats.interventions }}</span>
-            <span class="metric-label">Interventi totali</span>
+        <div class="hero-strip-top">
+          <div class="hero-copy">
+            <p class="hero-label">Dashboard Operativa</p>
+            <h1>ETR700-12 • Turno Mattina</h1>
+            <p class="hero-subtitle">
+              {{ viewMode === 'capoturno'
+                ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
+                : 'Tecnico collegato · inserisci credenziali per accedere' }}
+            </p>
           </div>
-          <div class="metric-card accent">
-            <span class="metric-value">{{ dashboardStats.techniciansOnline }}</span>
-            <span class="metric-label">Tecnici online</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value">{{ dashboardStats.shiftsCompleted }}</span>
-            <span class="metric-label">Turni completati</span>
+          <div class="hero-metrics">
+            <div class="metric-card">
+              <span class="metric-value">{{ dashboardStats.interventions }}</span>
+              <span class="metric-label">Interventi totali</span>
+            </div>
+            <div class="metric-card accent">
+              <ng-container *ngIf="technicianSnapshot$ | async as techSnapshot; else fallbackTech">
+                <span class="metric-value">{{ techSnapshot.techniciansOnline }}</span>
+                <span class="metric-label">Tecnici online (live)</span>
+                <span class="metric-support">
+                  {{ techSnapshot.active.length }} attivi · {{ techSnapshot.updatedAt | date: 'shortTime' }}
+                </span>
+              </ng-container>
+              <ng-template #fallbackTech>
+                <span class="metric-value">{{ dashboardStats.techniciansOnline }}</span>
+                <span class="metric-label">Tecnici online (stima)</span>
+                <span class="metric-support">Aggiornamento iniziale in corso</span>
+              </ng-template>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">{{ dashboardStats.shiftsCompleted }}</span>
+              <span class="metric-label">Turni completati</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">{{ dashboardStats.activeTickets }}</span>
+              <span class="metric-label">ODL attivi</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">{{ dashboardStats.cancelledTickets }}</span>
+              <span class="metric-label">ODL cancellati</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value">{{ dashboardStats.lastUpdated | date: 'shortTime' }}</span>
+              <span class="metric-label">Ultimo aggiornamento</span>
+            </div>
           </div>
         </div>
       </section>
@@ -122,7 +147,7 @@ import { AuthService } from './services/auth.service';
     `
       :host {
         display: block;
-        height: 100vh;
+        min-height: 100vh;
         color: var(--text-primary);
       }
 
@@ -130,7 +155,7 @@ import { AuthService } from './services/auth.service';
         display: flex;
         flex-direction: column;
         gap: 20px;
-        height: 100%;
+        min-height: 100vh;
         padding: 20px 0;
       }
 
@@ -188,17 +213,24 @@ import { AuthService } from './services/auth.service';
         border-radius: 20px;
         padding: 18px 26px;
         display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 20px;
+        flex-direction: column;
+        gap: 18px;
         box-shadow: var(--glass-shadow);
         backdrop-filter: blur(15px);
-        min-height: 110px;
+      }
+
+      .hero-strip-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+        flex-wrap: wrap;
       }
 
       .hero-copy {
-        flex: 2;
+        flex: 1 1 280px;
         min-height: 1px;
+        min-width: 240px;
       }
 
       .hero-label {
@@ -220,13 +252,11 @@ import { AuthService } from './services/auth.service';
       }
 
       .hero-metrics {
-        flex: 1;
-        display: flex;
-        gap: 10px;
-        flex-wrap: nowrap;
-        justify-content: flex-end;
-        overflow-x: auto;
-        padding-bottom: 4px;
+        flex: 1 1 320px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        overflow: hidden;
       }
 
       .metric-card {
@@ -239,6 +269,12 @@ import { AuthService } from './services/auth.service';
         flex-direction: column;
         gap: 4px;
       }
+
+      .metric-support {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
 
       .metric-card.accent {
         background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
@@ -527,6 +563,8 @@ export class AppComponent implements OnInit {
   };
   private dashboardService = inject(DashboardService);
   private authService = inject(AuthService);
+  private technicianPresenceService = inject(TechnicianPresenceService);
+  technicianSnapshot$ = this.technicianPresenceService.snapshot$.asObservable();
 
   setView(mode: 'capoturno' | 'tecnico'): void {
     this.viewMode = mode;

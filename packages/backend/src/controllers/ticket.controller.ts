@@ -1,11 +1,6 @@
 import { Request, Response } from 'express';
 import { Ticket } from '../models/ticket.model';
-import {
-  TicketRecord,
-  addFallbackTicket,
-  cancelFallbackTicket,
-  fallbackTickets,
-} from '../data/mock-data';
+import { TicketRecord } from '../data/mock-data';
 
 const buildPayload = (body: Partial<TicketRecord>): Partial<TicketRecord> => ({
   userId: body.userId ?? `user-${Math.floor(Math.random() * 9000)}`,
@@ -27,8 +22,8 @@ export const listTickets = async (_: Request, res: Response) => {
     const tickets = await Ticket.find().sort({ departureTime: -1 }).lean();
     return res.json({ data: tickets });
   } catch (error) {
-    console.warn('⚠️ Unable to fetch tickets from MongoDB, using fallback data');
-    return res.json({ data: fallbackTickets });
+    console.warn('⚠️ Unable to fetch tickets from MongoDB:', (error as Error).message);
+    return res.status(500).json({ error: 'Impossibile recuperare gli ordini' });
   }
 };
 
@@ -39,8 +34,8 @@ export const createTicket = async (req: Request, res: Response) => {
     const ticket = await Ticket.create({ ...payload, status: 'active' });
     return res.status(201).json({ data: ticket });
   } catch (error) {
-    const fallback = addFallbackTicket(payload);
-    return res.status(201).json({ data: fallback });
+    console.warn('⚠️ Impossibile creare un ordine:', (error as Error).message);
+    return res.status(500).json({ error: 'Creazione ordine fallita' });
   }
 };
 
@@ -54,10 +49,7 @@ export const cancelTicket = async (req: Request, res: Response) => {
     }
     return res.json({ data: ticket });
   } catch (error) {
-    const fallback = cancelFallbackTicket(id);
-    if (!fallback) {
-      return res.status(404).json({ error: 'Ticket non trovato nel fallback' });
-    }
-    return res.json({ data: fallback });
+    console.warn('⚠️ Impossibile annullare il ticket:', (error as Error).message);
+    return res.status(500).json({ error: 'Cancellazione ordine fallita' });
   }
 };

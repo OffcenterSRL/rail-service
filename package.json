@@ -2,7 +2,10 @@
   "name": "@org/source",
   "version": "0.0.3",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "dev:frontend": "npm --prefix packages/frontend run dev",
+    "dev:backend": "npm --prefix packages/backend run dev"
+  },
   "private": true,
   "dependencies": {},
   "devDependencies": {
