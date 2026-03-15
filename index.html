@@ -653,62 +653,17 @@
           <button class="btn btn-primary" onclick="createOdl()">+</button>
         </div>
       </div>
-      <div class="train-list" id="train-list"><div class="train-card selected" onclick="selectOdl('ODL-KUTWYP')">
-      <div class="train-card-header">
-        <div class="train-id">prova 1</div>
-        <div class="train-progress">0/0</div>
-      </div>
-      <div style="font-size:12px;color:var(--text2);font-family:var(--mono);margin-bottom:8px">ODL-KUTWYP · 1</div>
-      <div class="progress-bar"><div class="progress-fill " style="width:0%"></div></div>
-    </div></div>
+      <div class="train-list" id="train-list"><div style="text-align:center;padding:30px;color:var(--text2);font-size:13px;font-family:var(--mono);">Nessun ordine ancora.<br>Crea il primo ↑</div></div>
     </div>
 
     <!-- Main panel -->
     <div class="main-panel" id="main-panel">
-    <div class="panel-header">
-      <div>
-        <div class="panel-title">Treno prova 1</div>
-        <div class="panel-meta">ODL-KUTWYP · Turno: 1 · 15/03/2026, 01:29:11</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="copyCode('ODL-KUTWYP')">📋 Copia codice tecnico</button>
-        <button class="btn btn-blue btn-sm" onclick="showExport()">📤 Export turno</button>
-        <button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deleteOdl('ODL-KUTWYP')">🗑</button>
+      <div class="panel-empty">
+        <div class="big-icon">🚆</div>
+        <p>Seleziona un treno dalla lista</p>
+        <p style="opacity:.5">o crea un nuovo ordine di lavoro</p>
       </div>
     </div>
-
-    <div class="stats-row">
-      <div class="stat-card"><div class="stat-label">Totale</div><div class="stat-value blue">0</div></div>
-      <div class="stat-card"><div class="stat-label">Risolte</div><div class="stat-value green">0</div></div>
-      <div class="stat-card"><div class="stat-label">Parziali</div><div class="stat-value orange">0</div></div>
-      <div class="stat-card"><div class="stat-label">In attesa</div><div class="stat-value red">0</div></div>
-    </div>
-
-    <div class="link-box">🔑 Codice per il tecnico: <strong style="color:var(--text);font-size:15px">ODL-KUTWYP</strong> &nbsp;<span style="color:var(--text2);font-size:11px">→ il tecnico lo inserisce nella vista Tecnico</span></div>
-
-    <hr class="divider">
-
-    <div class="add-lav-form">
-      <h3>+ Nuova Lavorazione</h3>
-      <div class="form-grid">
-        <input type="text" id="lav-desc" placeholder="Descrizione attività">
-        <select id="lav-tipo">
-          <option value="Preventiva">Preventiva</option>
-          <option value="Correttiva">Correttiva</option>
-        </select>
-        <input type="text" id="lav-tecnico" placeholder="Tecnico assegnato">
-        <button class="btn btn-primary" onclick="addLavorazione()">Aggiungi</button>
-      </div>
-    </div>
-
-    <div class="lav-section">
-      <h3>Lavorazioni (0)</h3>
-      <div style="color:var(--text2);font-size:13px;font-family:var(--mono);padding:16px 0">Nessuna lavorazione aggiunta ancora.</div>
-      
-    </div>
-
-    <div id="export-section"></div>
-  </div>
 
   </div>
 </div>
@@ -737,7 +692,7 @@
   </div>
 </div>
 
-<div class="toast" id="toast">Ordine creato: ODL-KUTWYP</div>
+<div class="toast" id="toast"></div>
 
 <script>
 // ── STORAGE ──────────────────────────────────────────────
