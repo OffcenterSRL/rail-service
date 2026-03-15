@@ -5,8 +5,8 @@
   "scripts": {
     "dev:frontend": "npm --prefix packages/frontend run dev",
     "dev:backend": "npm --prefix packages/backend run dev",
-    "deploy:frontend": "npm --prefix packages/frontend run build && tar -czf deploy.tar -C packages/frontend dist captain-definition && npx caprover deploy -t ./deploy.tar -n notify -a rail-service-client && rm -f deploy.tar",
-    "deploy:backend": "npm --prefix packages/backend run build && tar -czf deploy-backend.tar -C packages/backend dist package.json captain-definition && npx caprover deploy -t ./deploy-backend.tar -n notify -a rail-service-api && rm -f deploy-backend.tar"
+    "deploy:frontend": "npm --prefix packages/frontend run build && tar -czf deploy.tar -C packages/frontend dist captain-definition && caprover deploy -t ./deploy.tar -n notify -a rail-service-client && rm -f deploy.tar",
+    "deploy:backend": "npm --prefix packages/backend run build && tar -czf deploy-backend.tar -C packages/backend dist package.json captain-definition && caprover deploy -t ./deploy-backend.tar -n notify -a rail-service-api && rm -f deploy-backend.tar"
   },
   "private": true,
   "dependencies": {},
@@ -15,7 +15,6 @@
     "@swc-node/register": "~1.11.1",
     "@swc/core": "~1.15.5",
     "@swc/helpers": "~0.5.18",
-    "caprover": "^1.2.0",
     "nx": "22.5.4",
     "prettier": "~3.6.2",
     "tslib": "^2.3.0",
