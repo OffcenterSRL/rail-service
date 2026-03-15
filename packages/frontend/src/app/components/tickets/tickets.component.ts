@@ -1,5 +1,5 @@
-import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
 
 @Component({
   selector: 'app-tickets',
@@ -13,27 +13,29 @@ import { CommonModule } from '@angular/common';
       </div>
     </div>
   `,
-  styles: [`
-    .tickets {
-      padding: 20px;
-    }
+  styles: [
+    `
+      .tickets {
+        padding: 20px;
+      }
 
-    .tickets-list {
-      margin-top: 20px;
-    }
+      .tickets-list {
+        margin-top: 20px;
+      }
 
-    .empty-message {
-      text-align: center;
-      color: var(--text-secondary);
-      padding: 40px 20px;
-      font-size: 14px;
-    }
+      .empty-message {
+        text-align: center;
+        color: var(--text-secondary);
+        padding: 40px 20px;
+        font-size: 14px;
+      }
 
-    h2 {
-      font-size: 24px;
-      margin: 0 0 16px 0;
-      font-weight: 600;
-    }
-  `]
+      h2 {
+        font-size: 24px;
+        margin: 0 0 16px 0;
+        font-weight: 600;
+      }
+    `,
+  ],
 })
 export class TicketsComponent {}

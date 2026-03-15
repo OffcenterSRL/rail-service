@@ -6,7 +6,8 @@
     "emitDeclarationOnly": false,
     "declarationMap": false,
     "module": "es2022",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"]
   },
   "include": ["src/**/*.ts"]
 }
