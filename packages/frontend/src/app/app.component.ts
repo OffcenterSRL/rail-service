@@ -1,15 +1,19 @@
 import { CommonModule } from '@angular/common';
+import { HttpClientModule } from '@angular/common/http';
 import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterOutlet } from '@angular/router';
-import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
-import { AdminComponent } from './components/admin/admin.component';
-import { APP_VERSION } from './app-version';
-import { HttpClientModule } from '@angular/common/http';
-import { DashboardService, DashboardStats } from './services/dashboard.service';
-import { AuthService, TechnicianSession } from './services/auth.service';
-import { Task, WorkOrder, WorkOrderService } from './services/work-order.service';
 import { Subscription } from 'rxjs';
+import { APP_VERSION } from './app-version';
+import { AdminComponent } from './components/admin/admin.component';
+import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
+import { AuthService, TechnicianSession } from './services/auth.service';
+import { DashboardService, DashboardStats } from './services/dashboard.service';
+import {
+  Task,
+  WorkOrder,
+  WorkOrderService,
+} from './services/work-order.service';
 
 type AssignedTask = {
   description: string;
@@ -22,7 +26,14 @@ type AssignedTask = {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, HttpClientModule, RouterOutlet, WorkOrderListComponent, AdminComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    HttpClientModule,
+    RouterOutlet,
+    WorkOrderListComponent,
+    AdminComponent,
+  ],
   template: `
     <div class="app-shell">
       <header class="header">
@@ -65,33 +76,43 @@ type AssignedTask = {
           <div class="hero-copy">
             <p class="hero-label">Dashboard Operativa</p>
             <h1>ETR700-12 • Turno Mattina</h1>
-              <p class="hero-subtitle">
-                {{
-                  viewMode === 'capoturno'
-                    ? 'Turno attivo · monitora gli ordini e i tecnici assegnati'
-                    : 'Admin view · aggiorna i tecnici e i parametri operativi'
-                }}
-              </p>
+            <p class="hero-subtitle">
+              {{
+                viewMode === 'capoturno'
+                  ? 'Turno attivo · monitora gli ordini e i tecnici assegnati'
+                  : 'Admin view · aggiorna i tecnici e i parametri operativi'
+              }}
+            </p>
           </div>
           <div class="hero-metrics">
             <div class="metric-card">
-              <span class="metric-value">{{ dashboardStats.interventions }}</span>
+              <span class="metric-value">{{
+                dashboardStats.interventions
+              }}</span>
               <span class="metric-label">Interventi totali</span>
             </div>
             <div class="metric-card">
-              <span class="metric-value">{{ dashboardStats.shiftsCompleted }}</span>
+              <span class="metric-value">{{
+                dashboardStats.shiftsCompleted
+              }}</span>
               <span class="metric-label">Turni completati</span>
             </div>
             <div class="metric-card">
-              <span class="metric-value">{{ dashboardStats.activeTickets }}</span>
+              <span class="metric-value">{{
+                dashboardStats.activeTickets
+              }}</span>
               <span class="metric-label">ODL attivi</span>
             </div>
             <div class="metric-card">
-              <span class="metric-value">{{ dashboardStats.cancelledTickets }}</span>
+              <span class="metric-value">{{
+                dashboardStats.cancelledTickets
+              }}</span>
               <span class="metric-label">ODL cancellati</span>
             </div>
             <div class="metric-card">
-              <span class="metric-value">{{ dashboardStats.lastUpdated | date: 'shortTime' }}</span>
+              <span class="metric-value">{{
+                dashboardStats.lastUpdated | date: 'shortTime'
+              }}</span>
               <span class="metric-label">Ultimo aggiornamento</span>
             </div>
           </div>
@@ -117,7 +138,10 @@ type AssignedTask = {
               <div class="panel-shell">
                 <div class="panel-heading">
                   <h2>Login Tecnico</h2>
-                  <span class="panel-subtitle">Accedi con nickname e matricola per vedere le tue lavorazioni.</span>
+                  <span class="panel-subtitle"
+                    >Accedi con nickname e matricola per vedere le tue
+                    lavorazioni.</span
+                  >
                 </div>
                 <p
                   *ngIf="loginState"
@@ -130,22 +154,46 @@ type AssignedTask = {
                 <ng-container *ngIf="!technicianSession">
                   <div class="field">
                     <label>Nickname</label>
-                    <input type="text" [(ngModel)]="tecNickname" placeholder="es. Carlo" />
+                    <input
+                      type="text"
+                      [(ngModel)]="tecNickname"
+                      placeholder="es. Carlo"
+                    />
                   </div>
                   <div class="field">
                     <label>Matricola</label>
-                    <input type="text" [(ngModel)]="tecMatricola" placeholder="123456" />
+                    <input
+                      type="text"
+                      [(ngModel)]="tecMatricola"
+                      placeholder="123456"
+                    />
                   </div>
-                  <button class="btn btn-primary" (click)="loginTechnician()">Accedi come tecnico</button>
+                  <button class="btn btn-primary" (click)="loginTechnician()">
+                    Accedi come tecnico
+                  </button>
                 </ng-container>
-              <div *ngIf="technicianSession" class="assigned-tasks">
+                <div *ngIf="technicianSession" class="assigned-tasks">
                   <div class="assigned-header">
                     <h3>Lavorazioni per {{ technicianSession.nickname }}</h3>
                     <div class="assigned-actions">
-                      <button type="button" class="btn btn-secondary" (click)="toggleShowCompletedOrders()">
-                        {{ showCompletedOrders ? 'Nascondi ODL completati' : 'Mostra ODL completati' }}
+                      <button
+                        type="button"
+                        class="btn btn-secondary"
+                        (click)="toggleShowCompletedOrders()"
+                      >
+                        {{
+                          showCompletedOrders
+                            ? 'Nascondi ODL completati'
+                            : 'Mostra ODL completati'
+                        }}
                       </button>
-                      <button type="button" class="btn btn-tertiary" (click)="logoutTechnician()">Esci</button>
+                      <button
+                        type="button"
+                        class="btn btn-tertiary"
+                        (click)="logoutTechnician()"
+                      >
+                        Esci
+                      </button>
                     </div>
                   </div>
                   <div class="assigned-controls">
@@ -161,11 +209,17 @@ type AssignedTask = {
                   </div>
                   <div *ngFor="let item of assignedTasks" class="assigned-task">
                     <div class="assigned-task-header">
-                      <span class="task-order">{{ item.orderCode }} · {{ item.trainNumber }}</span>
-                      <span class="task-status-pill">{{ item.status | uppercase }}</span>
+                      <span class="task-order"
+                        >{{ item.orderCode }} · {{ item.trainNumber }}</span
+                      >
+                      <span class="task-status-pill">{{
+                        item.status | uppercase
+                      }}</span>
                     </div>
                     <p class="task-description">{{ item.description }}</p>
-                    <span class="task-priority" [ngClass]="item.priority">{{ item.priority | titlecase }}</span>
+                    <span class="task-priority" [ngClass]="item.priority">{{
+                      item.priority | titlecase
+                    }}</span>
                   </div>
                 </div>
               </div>
@@ -179,9 +233,7 @@ type AssignedTask = {
           </ng-container>
         </ng-container>
       </div>
-      <footer class="app-footer">
-        Versione {{ appVersion }}
-      </footer>
+      <footer class="app-footer">Versione {{ appVersion }}</footer>
     </div>
   `,
   styles: [
@@ -190,8 +242,6 @@ type AssignedTask = {
         display: block;
         min-height: 100vh;
         color: var(--text-primary);
-        background: radial-gradient(circle at top, rgba(124, 199, 255, 0.2), rgba(9, 13, 26, 0.95) 45%);
-        background-attachment: fixed;
       }
 
       .app-shell {
@@ -209,7 +259,6 @@ type AssignedTask = {
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 16px;
         padding: 16px 28px;
-        box-shadow: var(--glass-shadow);
         backdrop-filter: blur(14px);
       }
 
@@ -253,14 +302,13 @@ type AssignedTask = {
       }
 
       .hero-strip {
-        background: linear-gradient(135deg, rgba(9, 12, 25, 0.95), rgba(28, 34, 59, 0.95));
+        background: #0b0f1d;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 20px;
         padding: 18px 26px;
         display: flex;
         flex-direction: column;
         gap: 18px;
-        box-shadow: var(--glass-shadow);
         backdrop-filter: blur(15px);
       }
 
@@ -319,7 +367,6 @@ type AssignedTask = {
         font-size: 11px;
         color: var(--text-muted);
       }
-
 
       .metric-card.accent {
         background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
@@ -390,7 +437,6 @@ type AssignedTask = {
         padding: 32px;
         border-radius: 28px;
         border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 30px 75px rgba(2, 6, 18, 0.7);
         display: flex;
         flex-direction: column;
         gap: 18px;
@@ -453,7 +499,9 @@ type AssignedTask = {
         border: none;
         letter-spacing: 0.5px;
         text-transform: uppercase;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
       }
 
       .panel-shell .btn-primary {
@@ -777,20 +825,27 @@ export class AppComponent implements OnInit, OnDestroy {
   toggleShowCompletedOrders(): void {
     this.showCompletedOrders = !this.showCompletedOrders;
     if (this.technicianSession) {
-      this.updateAssignedTasksView(this.technicianSession.nickname.toLowerCase());
+      this.updateAssignedTasksView(
+        this.technicianSession.nickname.toLowerCase(),
+      );
     }
   }
 
   updateSearchTerm(term: string): void {
     this.searchTerm = term;
     if (this.technicianSession) {
-      this.updateAssignedTasksView(this.technicianSession.nickname.toLowerCase());
+      this.updateAssignedTasksView(
+        this.technicianSession.nickname.toLowerCase(),
+      );
     }
   }
 
   loginTechnician(): void {
     if (!this.tecNickname || !this.tecMatricola) {
-      this.loginState = { type: 'error', message: 'Inserisci nickname e matricola per accedere.' };
+      this.loginState = {
+        type: 'error',
+        message: 'Inserisci nickname e matricola per accedere.',
+      };
       return;
     }
 
@@ -810,7 +865,8 @@ export class AppComponent implements OnInit, OnDestroy {
           this.showCompletedOrders = false;
         },
         error: (error) => {
-          const message = error?.error?.error ?? 'Errore durante il login tecnico.';
+          const message =
+            error?.error?.error ?? 'Errore durante il login tecnico.';
           this.loginState = { type: 'error', message };
         },
       });
@@ -847,10 +903,12 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     const normalized = nickname.toLowerCase();
-    this.assignedTasksSub = this.workOrderService.getWorkOrders().subscribe((orders) => {
-      this.workOrdersSnapshot = orders;
-      this.updateAssignedTasksView(normalized);
-    });
+    this.assignedTasksSub = this.workOrderService
+      .getWorkOrders()
+      .subscribe((orders) => {
+        this.workOrdersSnapshot = orders;
+        this.updateAssignedTasksView(normalized);
+      });
   }
 
   logoutTechnician(): void {
@@ -867,17 +925,20 @@ export class AppComponent implements OnInit, OnDestroy {
     let tasks = this.workOrdersSnapshot.flatMap((order) =>
       order.tasks
         .filter((task: Task) => {
-          const nicknameMatch = task.assignedTechnicianNickname?.toLowerCase() === normalized;
-          const nameMatch = task.assignedTechnicianName?.toLowerCase() === normalized;
-          const includeOrder = this.showCompletedOrders || order.status !== 'completed';
+          const nicknameMatch =
+            task.assignedTechnicianNickname?.toLowerCase() === normalized;
+          const nameMatch =
+            task.assignedTechnicianName?.toLowerCase() === normalized;
+          const includeOrder =
+            this.showCompletedOrders || order.status !== 'completed';
           return includeOrder && (nicknameMatch || nameMatch);
         })
         .map((task: Task) => ({
-            description: task.description,
-            priority: task.priority,
-            status: task.status,
-            orderCode: order.codiceODL,
-            trainNumber: order.trainNumber,
+          description: task.description,
+          priority: task.priority,
+          status: task.status,
+          orderCode: order.codiceODL,
+          trainNumber: order.trainNumber,
         })),
     );
     const search = this.searchTerm.trim().toLowerCase();
@@ -900,7 +961,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.technicianSession = session;
     this.tecNickname = session.nickname;
     this.tecMatricola = session.matricola;
-    this.loginState = { type: 'success', message: session.message ?? 'Sessione ripristinata.' };
+    this.loginState = {
+      type: 'success',
+      message: session.message ?? 'Sessione ripristinata.',
+    };
     this.searchTerm = '';
     this.showCompletedOrders = false;
     this.watchAssignedTasks(session.nickname);
@@ -911,7 +975,10 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     try {
-      window.localStorage.setItem(this.technicianStorageKey, JSON.stringify(session));
+      window.localStorage.setItem(
+        this.technicianStorageKey,
+        JSON.stringify(session),
+      );
     } catch {
       // ignore
     }
