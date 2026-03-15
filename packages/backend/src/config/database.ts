@@ -7,7 +7,7 @@ export const connectDatabase = async () => {
     await mongoose.connect(mongoUri);
     console.log('✅ MongoDB connected successfully');
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
-    process.exit(1);
+    console.warn('⚠️ MongoDB connection warning:', (error as Error).message);
+    console.warn('Database will be unavailable - running in demo mode');
   }
 };

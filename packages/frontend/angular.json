@@ -1,4 +1,6 @@
 {
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
   "projects": {
     "frontend": {
       "projectType": "application",
@@ -22,13 +24,29 @@
             "assets": ["src/favicon.ico", "src/assets"],
             "styles": ["src/styles.scss"],
             "scripts": []
-          }
+          },
+          "configurations": {
+            "development": {
+              "optimization": false,
+              "sourceMap": true,
+              "namedChunks": true
+            },
+            "production": {
+              "optimization": true,
+              "sourceMap": false,
+              "namedChunks": false
+            }
+          },
+          "defaultConfiguration": "production"
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "development": {
-              "browserTarget": "frontend:build:development"
+              "buildTarget": "frontend:build:development"
+            },
+            "production": {
+              "buildTarget": "frontend:build:production"
             }
           },
           "defaultConfiguration": "development"
