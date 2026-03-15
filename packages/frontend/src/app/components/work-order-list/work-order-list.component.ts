@@ -375,12 +375,12 @@ export class WorkOrderListComponent implements OnInit {
   constructor() {
     this.workOrders$ = this.workOrderService.getWorkOrders();
     this.technicians$ = this.technicianService.getTechnicians();
-    this.filteredWorkOrders$ = combineLatest({
-      orders: this.workOrders$,
-      searchValue: this.searchTerm$,
-      showCompleted: this.showCompleted$,
-    }).pipe(
-      map(({ orders, searchValue, showCompleted }) =>
+    this.filteredWorkOrders$ = combineLatest([
+      this.workOrders$,
+      this.searchTerm$,
+      this.showCompleted$,
+    ]).pipe(
+      map(([orders, searchValue, showCompleted]) =>
         this.filterOrders(orders, searchValue, showCompleted),
       ),
     );
