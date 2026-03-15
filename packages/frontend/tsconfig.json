@@ -4,6 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "baseUrl": ".",
+    "lib": ["es2022", "dom"],
     "module": "es2022",
     "target": "es2022"
   },

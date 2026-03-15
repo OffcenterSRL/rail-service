@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Observable } from 'rxjs';
 import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
@@ -160,8 +160,9 @@ export class WorkOrderListComponent implements OnInit {
   trainNumber = '';
   shift = '';
   private selectedWorkOrder: WorkOrder | null = null;
+  private workOrderService = inject(WorkOrderService);
 
-  constructor(private workOrderService: WorkOrderService) {
+  constructor() {
     this.workOrders$ = this.workOrderService.getWorkOrders();
   }
 
