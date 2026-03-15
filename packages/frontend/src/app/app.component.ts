@@ -1,12 +1,14 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { RouterOutlet } from '@angular/router';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
+import { APP_VERSION } from './app-version';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, WorkOrderListComponent],
+  imports: [CommonModule, FormsModule, RouterOutlet, WorkOrderListComponent],
   template: `
     <div class="app-shell">
       <header class="header">
@@ -17,7 +19,22 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
           </div>
           <div class="header-right">
             <div class="status-pill">3 ordini attivi</div>
-            <button class="btn-caporturno">Tecnico</button>
+            <div class="view-toggle">
+              <button
+                class="view-btn"
+                [class.active]="viewMode === 'capoturno'"
+                (click)="setView('capoturno')"
+              >
+                Capoturno
+              </button>
+              <button
+                class="view-btn"
+                [class.active]="viewMode === 'tecnico'"
+                (click)="setView('tecnico')"
+              >
+                Tecnico
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -26,7 +43,11 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
         <div class="hero-copy">
           <p class="hero-label">Dashboard Operativa</p>
           <h1>ETR700-12 • Turno Mattina</h1>
-          <p class="hero-subtitle">Aggiornamento automatico 06:14 · 4 tecnici connessi</p>
+          <p class="hero-subtitle">
+            {{ viewMode === 'capoturno'
+              ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
+              : 'Tecnico collegato · inserisci credenziali per accedere' }}
+          </p>
         </div>
         <div class="hero-metrics">
           <div class="metric-card">
@@ -45,17 +66,46 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
       </section>
 
       <div class="main-layout">
-        <aside class="sidebar">
-          <div class="sidebar-content">
-            <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
-            <app-work-order-list></app-work-order-list>
-          </div>
-        </aside>
+        <ng-container *ngIf="viewMode === 'capoturno'; else tecnicoView">
+          <aside class="sidebar">
+            <div class="sidebar-content">
+              <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
+              <app-work-order-list></app-work-order-list>
+            </div>
+          </aside>
 
-        <main class="main-content">
-          <router-outlet></router-outlet>
-        </main>
+          <main class="main-content">
+            <router-outlet></router-outlet>
+          </main>
+        </ng-container>
+        <ng-template #tecnicoView>
+          <div class="tecnico-login">
+            <div class="login-card">
+              <h2>Login Tecnico</h2>
+              <p>Inserisci il codice ODL, il tuo nome e la matricola per accedere.</p>
+              <div class="field">
+                <label>Codice ODL</label>
+                <input type="text" [(ngModel)]="tecOdL" placeholder="ODL-XXXXXX" />
+              </div>
+              <div class="field">
+                <label>Nome e cognome</label>
+                <input type="text" [(ngModel)]="tecName" placeholder="Esempio: Mario Rossi" />
+              </div>
+              <div class="field">
+                <label>Matricola</label>
+                <input type="text" [(ngModel)]="tecMatricola" placeholder="123456" />
+              </div>
+              <button class="btn btn-primary" (click)="loginTechnician()">
+                Accedi come tecnico
+              </button>
+              <p *ngIf="tecMessage" class="login-message">{{ tecMessage }}</p>
+            </div>
+          </div>
+        </ng-template>
       </div>
+      <footer class="app-footer">
+        Versione {{ appVersion }}
+      </footer>
     </div>
   `,
   styles: [
@@ -126,17 +176,19 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
         background: linear-gradient(135deg, rgba(9, 12, 25, 0.95), rgba(28, 34, 59, 0.95));
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 20px;
-        padding: 24px 32px;
+        padding: 18px 26px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 24px;
+        gap: 20px;
         box-shadow: var(--glass-shadow);
         backdrop-filter: blur(15px);
+        min-height: 110px;
       }
 
       .hero-copy {
         flex: 2;
+        min-height: 1px;
       }
 
       .hero-label {
@@ -148,8 +200,8 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
       }
 
       .hero-copy h1 {
-        font-size: 28px;
-        margin-bottom: 6px;
+        font-size: 24px;
+        margin-bottom: 4px;
       }
 
       .hero-subtitle {
@@ -160,17 +212,19 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
       .hero-metrics {
         flex: 1;
         display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
+        gap: 10px;
+        flex-wrap: nowrap;
         justify-content: flex-end;
+        overflow-x: auto;
+        padding-bottom: 4px;
       }
 
       .metric-card {
         background: rgba(255, 255, 255, 0.04);
         border-radius: 16px;
-        padding: 16px;
+        padding: 12px 14px;
         border: 1px solid rgba(255, 255, 255, 0.08);
-        min-width: 110px;
+        min-width: 90px;
         display: flex;
         flex-direction: column;
         gap: 4px;
@@ -194,26 +248,120 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
         opacity: 0.85;
       }
 
-      .btn-caporturno {
-        background-color: var(--accent-orange);
-        color: #0f0c08;
-        padding: 9px 20px;
-        border-radius: 10px;
-        font-weight: 600;
-        font-size: 13px;
-        transition: background-color 0.2s ease, transform 0.2s ease;
-        box-shadow: 0 12px 20px rgba(255, 124, 45, 0.25);
+      .view-toggle {
+        display: inline-flex;
+        gap: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 4px;
       }
 
-      .btn-caporturno:hover {
-        background-color: var(--accent-orange-soft);
+      .view-btn {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        transition: all 0.2s ease;
+      }
+
+      .view-btn.active {
+        background: rgba(255, 255, 255, 0.18);
+        color: #fff;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+      }
+
+      .tecnico-login {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .login-card {
+        background: rgba(16, 19, 32, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 28px;
+        width: min(420px, 100%);
+        box-shadow: var(--glass-shadow);
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .login-card h2 {
+        margin: 0;
+        font-size: 22px;
+      }
+
+      .login-card .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .login-card label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-secondary);
+      }
+
+      .login-card input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .login-message {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      .login-card .btn {
+        width: 100%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 0;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 14px;
+        border: none;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .login-card .btn-primary {
+        background: linear-gradient(180deg, #7bc7ff, #4b6ef5);
+        color: #02050c;
+        box-shadow: 0 10px 20px rgba(75, 110, 245, 0.35);
+      }
+
+      .login-card .btn-primary:hover {
         transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(75, 110, 245, 0.45);
+      }
+
+      .app-footer {
+        padding: 12px 24px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        text-align: right;
+        font-size: 12px;
+        color: var(--text-secondary);
       }
 
       .main-layout {
         display: flex;
         flex: 1;
-        gap: 20px;
+        gap: 16px;
         min-height: 0;
       }
 
@@ -251,7 +399,7 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
         overflow-y: auto;
       }
 
-      @media (max-width: 1024px) {
+      @media (max-width: 1100px) {
         .main-layout {
           flex-direction: column;
         }
@@ -261,9 +409,9 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
         }
       }
 
-      @media (max-width: 768px) {
+      @media (max-width: 1024px) {
         body {
-          padding: 0 10px;
+          padding: 0 16px;
         }
 
         .hero-strip {
@@ -279,7 +427,89 @@ import { WorkOrderListComponent } from './components/work-order-list/work-order-
           padding: 24px;
         }
       }
+
+      @media (max-width: 768px) {
+        body {
+          padding: 0 10px;
+        }
+
+        .hero-strip {
+          padding: 16px;
+        }
+
+        .header {
+          padding: 12px 18px;
+        }
+
+        .hero-copy h1 {
+          font-size: 22px;
+        }
+
+        .hero-metrics {
+          justify-content: flex-start;
+        }
+
+        .main-content {
+          padding: 20px;
+        }
+      }
+
+      @media (max-width: 600px) {
+        .header-content {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .status-pill {
+          font-size: 11px;
+          padding: 4px 10px;
+        }
+
+        .hero-strip {
+          flex-direction: column;
+          min-height: auto;
+        }
+
+        .hero-metrics {
+          width: 100%;
+          justify-content: space-between;
+        }
+
+        .metric-card {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .main-content {
+          padding: 16px;
+        }
+
+        .login-card {
+          padding: 20px;
+        }
+      }
     `,
   ],
 })
-export class AppComponent {}
+export class AppComponent {
+  viewMode: 'capoturno' | 'tecnico' = 'capoturno';
+  tecOdL = '';
+  tecName = '';
+  tecMatricola = '';
+  tecMessage = '';
+  appVersion = APP_VERSION;
+
+  setView(mode: 'capoturno' | 'tecnico'): void {
+    this.viewMode = mode;
+    this.tecMessage = '';
+  }
+
+  loginTechnician(): void {
+    if (!this.tecOdL || !this.tecName || !this.tecMatricola) {
+      this.tecMessage = 'Compila tutti i campi per accedere.';
+      return;
+    }
+    this.tecMessage = `Accesso richiesto per ${this.tecName} · ODL ${this.tecOdL}`;
+  }
+}

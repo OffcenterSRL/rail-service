@@ -26,12 +26,11 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
             [(ngModel)]="trainNumber"
             class="input-field"
           />
-          <input
-            type="text"
-            placeholder="Turno (es. Mattina 06-14)"
-            [(ngModel)]="shift"
-            class="input-field"
-          />
+          <select [(ngModel)]="shift" class="select-field">
+            <option *ngFor="let option of shiftOptions" [value]="option">
+              {{ option }}
+            </option>
+          </select>
           <button (click)="createOrder()" class="btn-create">Nuovo +</button>
         </div>
 
@@ -110,6 +109,14 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
       .input-field {
         width: 100%;
         font-size: 13px;
+      }
+
+      .select-field {
+        width: 100%;
+        font-size: 13px;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 10px;
+        padding: 10px 12px;
       }
 
       .btn-create {
@@ -219,6 +226,32 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
         border: 1px dashed rgba(255, 255, 255, 0.2);
         border-radius: 14px;
       }
+
+      @media (max-width: 600px) {
+        .new-order-section {
+          padding: 12px 0;
+        }
+
+        .order-card {
+          padding: 12px 14px;
+        }
+
+        .order-title-row {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 6px;
+        }
+
+        .order-footer {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 4px;
+        }
+
+        .orders-list {
+          gap: 10px;
+        }
+      }
     `,
   ],
 })
@@ -226,11 +259,17 @@ export class WorkOrderListComponent implements OnInit {
   workOrders$: Observable<WorkOrder[]>;
   trainNumber = '';
   shift = '';
+  readonly shiftOptions = [
+    'Mattina (06-14)',
+    'Pomeriggio (14-22)',
+    'Notte (22-06)',
+  ];
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
 
   constructor() {
     this.workOrders$ = this.workOrderService.getWorkOrders();
+    this.setDefaultShift();
   }
 
   ngOnInit(): void {
@@ -245,6 +284,7 @@ export class WorkOrderListComponent implements OnInit {
       this.trainNumber = '';
       this.shift = '';
       this.workOrderService.saveWorkOrders();
+      this.setDefaultShift();
     }
   }
 
@@ -263,5 +303,20 @@ export class WorkOrderListComponent implements OnInit {
       completed: 'Completato',
     };
     return map[status];
+  }
+
+  private getCurrentShift(): string {
+    const hour = new Date().getHours();
+    if (hour >= 6 && hour < 14) {
+      return 'Mattina (06-14)';
+    }
+    if (hour >= 14 && hour < 22) {
+      return 'Pomeriggio (14-22)';
+    }
+    return 'Notte (22-06)';
+  }
+
+  private setDefaultShift(): void {
+    this.shift = this.getCurrentShift();
   }
 }
