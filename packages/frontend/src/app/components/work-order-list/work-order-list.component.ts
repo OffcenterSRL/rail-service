@@ -10,43 +10,60 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
   imports: [CommonModule, FormsModule],
   template: `
     <div class="work-order-list-container">
-      <!-- Create new work order form -->
-      <div class="new-order-section">
-        <input
-          type="text"
-          placeholder="N° Treno (es. ETR700-12)"
-          [(ngModel)]="trainNumber"
-          class="input-field"
-        />
-        <input
-          type="text"
-          placeholder="Turno (es. Mattina 06-14)"
-          [(ngModel)]="shift"
-          class="input-field"
-        />
-        <button (click)="createOrder()" class="btn-create">+</button>
-      </div>
-
-      <!-- List of work orders -->
-      <div class="orders-list">
-        <div
-          *ngFor="let order of workOrders$ | async"
-          [class.active]="isOrderActive(order)"
-          (click)="selectOrder(order)"
-          class="order-card"
-        >
-          <div class="order-title">{{ order.trainNumber }}</div>
-          <div class="order-info">
-            {{ order.codiceODL }} · {{ order.shift }}
+      <ng-container *ngIf="workOrders$ | async as workOrders">
+        <div class="list-header">
+          <div>
+            <p class="header-label">Ordini salvati</p>
+            <h3 class="header-title">Seleziona un turno</h3>
           </div>
-          <div class="order-count">{{ order.tasks.length }}/1</div>
+          <span class="orders-count">{{ workOrders.length }} elementi</span>
         </div>
-      </div>
 
-      <!-- Empty state -->
-      <div *ngIf="(workOrders$ | async)?.length === 0" class="empty-state">
-        <p>Nessun ordine</p>
-      </div>
+        <div class="new-order-section">
+          <input
+            type="text"
+            placeholder="N° Treno (es. ETR700-12)"
+            [(ngModel)]="trainNumber"
+            class="input-field"
+          />
+          <input
+            type="text"
+            placeholder="Turno (es. Mattina 06-14)"
+            [(ngModel)]="shift"
+            class="input-field"
+          />
+          <button (click)="createOrder()" class="btn-create">Nuovo +</button>
+        </div>
+
+        <div *ngIf="workOrders.length > 0; else emptyState" class="orders-list">
+          <div
+            *ngFor="let order of workOrders"
+            (click)="selectOrder(order)"
+            class="order-card"
+            [class.active]="isOrderActive(order)"
+          >
+            <div class="order-title-row">
+              <div class="order-title">{{ order.trainNumber }}</div>
+              <span class="order-status" [ngClass]="order.status">
+                {{ statusLabel(order.status) }}
+              </span>
+            </div>
+            <div class="order-info">
+              {{ order.codiceODL }}
+            </div>
+            <div class="order-footer">
+              <span class="order-count">{{ order.tasks.length }} lavorazioni</span>
+              <span class="order-meta">{{ order.shift }}</span>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <ng-template #emptyState>
+        <div class="empty-state">
+          <p>Nessun ordine salvato</p>
+        </div>
+      </ng-template>
     </div>
   `,
   styles: [
@@ -58,99 +75,149 @@ import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
         height: 100%;
       }
 
+      .list-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .header-label {
+        font-size: 11px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+
+      .header-title {
+        font-size: 16px;
+        margin: 4px 0 0 0;
+      }
+
+      .orders-count {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
       .new-order-section {
         display: flex;
         flex-direction: column;
         gap: 8px;
-        padding-bottom: 16px;
-        border-bottom: 1px solid var(--dark-tertiary);
+        padding: 16px 0;
       }
 
       .input-field {
         width: 100%;
-        padding: 8px 12px;
-        background-color: var(--dark-secondary);
-        border: 1px solid var(--dark-tertiary);
-        border-radius: 4px;
-        color: var(--text-primary);
         font-size: 13px;
-
-        &::placeholder {
-          color: var(--text-secondary);
-        }
-
-        &:focus {
-          outline: none;
-          border-color: var(--accent-orange);
-        }
       }
 
       .btn-create {
         align-self: flex-end;
-        background-color: var(--accent-orange);
-        color: white;
+        background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
+        color: #0b0b0b;
         border: none;
-        padding: 8px 16px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 500;
-        transition: background-color 0.2s;
+        padding: 10px 18px;
+        border-radius: 999px;
+        font-weight: 600;
+        box-shadow: 0 12px 18px rgba(255, 124, 45, 0.35);
+        transition: transform 0.2s ease;
+      }
 
-        &:hover {
-          background-color: var(--accent-orange-dark);
-        }
+      .btn-create:hover {
+        transform: translateY(-1px);
       }
 
       .orders-list {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 12px;
         overflow-y: auto;
         flex: 1;
+        padding-right: 4px;
       }
 
       .order-card {
-        background-color: var(--dark-secondary);
-        border: 2px solid transparent;
-        border-radius: 6px;
-        padding: 12px;
+        background: rgba(20, 28, 41, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 14px;
+        padding: 14px 16px;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: border-color 0.2s ease, transform 0.2s ease;
+        box-shadow: 0 15px 30px rgba(3, 7, 18, 0.6);
+      }
 
-        &:hover {
-          background-color: #3a3a3a;
-        }
+      .order-card:hover {
+        border-color: rgba(255, 255, 255, 0.12);
+        transform: translateY(-1px);
+      }
 
-        &.active {
-          border-color: var(--accent-orange);
-          background-color: #2a2a2a;
-        }
+      .order-card.active {
+        border-color: var(--accent-orange);
+        box-shadow: 0 20px 40px rgba(255, 124, 45, 0.3);
+      }
+
+      .order-title-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
       }
 
       .order-title {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
-        color: var(--text-primary);
-        margin-bottom: 4px;
+      }
+
+      .order-status {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+      }
+
+      .order-status.active {
+        background: rgba(124, 199, 255, 0.16);
+        color: var(--accent-blue);
+      }
+
+      .order-status.pending {
+        background: rgba(255, 124, 45, 0.16);
+        color: var(--accent-orange);
+      }
+
+      .order-status.completed {
+        background: rgba(130, 255, 169, 0.16);
+        color: var(--accent-lime);
       }
 
       .order-info {
         font-size: 12px;
         color: var(--text-secondary);
-        margin-bottom: 4px;
+        margin-bottom: 10px;
       }
 
-      .order-count {
-        font-size: 13px;
-        color: var(--text-secondary);
-        text-align: right;
+      .order-footer {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .order-meta {
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
       }
 
       .empty-state {
         text-align: center;
-        padding: 20px;
+        padding: 26px 12px;
         color: var(--text-secondary);
         font-size: 14px;
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 14px;
       }
     `,
   ],
@@ -187,5 +254,14 @@ export class WorkOrderListComponent implements OnInit {
 
   isOrderActive(order: WorkOrder): boolean {
     return this.selectedWorkOrder?.id === order.id;
+  }
+
+  statusLabel(status: WorkOrder['status']): string {
+    const map: Record<WorkOrder['status'], string> = {
+      pending: 'In attesa',
+      active: 'In corso',
+      completed: 'Completato',
+    };
+    return map[status];
   }
 }
