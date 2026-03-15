@@ -68,7 +68,7 @@ type AssignedTask = {
               <p class="hero-subtitle">
                 {{
                   viewMode === 'capoturno'
-                    ? 'Aggiornamento automatico 06:14 · 4 tecnici connessi'
+                    ? 'Turno attivo · monitora gli ordini e i tecnici assegnati'
                     : 'Admin view · aggiorna i tecnici e i parametri operativi'
                 }}
               </p>
