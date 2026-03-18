@@ -1,11 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import {
-  FormBuilder,
-  FormGroup,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 import { Observable, Subscription } from 'rxjs';
 import { TechnicianService, Technician } from '../../services/technician.service';
 import {
@@ -17,7 +13,7 @@ import {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule],
   template: `
     <div class="dashboard">
       <!-- Empty state when no order is selected -->
@@ -57,7 +53,7 @@ import {
             </div>
             <div class="meta-item">
               <span class="meta-label">Creato il</span>
-              <span class="meta-value">{{ selectedOrder.createdAt | date: 'short' }}</span>
+              <span class="meta-value">{{ selectedOrder.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">Codice ODL</span>
@@ -172,14 +168,78 @@ import {
             <p>Nessuna lavorazione aggiunta ancora.</p>
           </div>
           <div *ngFor="let task of selectedOrder.tasks" class="task-item">
-            <div class="task-content">
-              <div class="task-title">{{ task.description }}</div>
-              <div class="task-meta">
-                {{ task.priority | titlecase }} · Assegnata a:
-                {{ task.assignedTechnicianName }}
+            <ng-container *ngIf="editingTaskId !== task.id; else editTaskBlock">
+              <div class="task-content">
+                <div class="task-title">{{ task.description }}</div>
+                <div class="task-meta">
+                  {{ task.priority | titlecase }} · Assegnata a: {{ task.assignedTechnicianName }}
+                </div>
               </div>
-            </div>
-            <div class="task-status">{{ task.status }}</div>
+              <div class="task-actions">
+                <span class="task-status">{{ task.status }}</span>
+                <button class="btn btn-secondary" type="button" (click)="startEditTask(task)">
+                  Modifica
+                </button>
+              </div>
+            </ng-container>
+            <ng-template #editTaskBlock>
+              <div class="task-edit-grid">
+                <label class="task-field">
+                  <span class="task-label">Descrizione</span>
+                  <input
+                    type="text"
+                    class="task-input"
+                    [(ngModel)]="editTaskDraft.description"
+                    [ngModelOptions]="{ standalone: true }"
+                  />
+                </label>
+                <label class="task-field">
+                  <span class="task-label">Priorità</span>
+                  <select
+                    class="task-input"
+                    [(ngModel)]="editTaskDraft.priority"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option *ngFor="let option of priorityOptions" [value]="option">
+                      {{ option | titlecase }}
+                    </option>
+                  </select>
+                </label>
+                <label class="task-field">
+                  <span class="task-label">Tecnico</span>
+                  <select
+                    class="task-input"
+                    [(ngModel)]="editTaskDraft.assignedTechnicianId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="">Seleziona tecnico</option>
+                    <option *ngFor="let tech of technicianList" [value]="tech.id">
+                      {{ tech.name }}
+                    </option>
+                  </select>
+                </label>
+                <label class="task-field">
+                  <span class="task-label">Stato</span>
+                  <select
+                    class="task-input"
+                    [(ngModel)]="editTaskDraft.status"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                  <option *ngFor="let option of statusOptions" [value]="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+                <div class="task-edit-actions">
+                  <button class="btn btn-primary" type="button" (click)="saveTaskEdits(task)">
+                    Salva
+                  </button>
+                  <button class="btn btn-secondary" type="button" (click)="cancelEditTask()">
+                    Annulla
+                  </button>
+                </div>
+              </div>
+            </ng-template>
           </div>
         </div>
       </ng-container>
@@ -598,12 +658,12 @@ import {
         background: rgba(255, 255, 255, 0.02);
         border-radius: 18px;
         padding: 14px 18px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
         gap: 12px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 15px 40px rgba(1, 8, 20, 0.6);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
       }
 
       .task-content {
@@ -622,6 +682,13 @@ import {
         color: var(--text-secondary);
       }
 
+      .task-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
       .task-status {
         font-size: 12px;
         color: var(--text-primary);
@@ -630,6 +697,45 @@ import {
         background: rgba(124, 199, 255, 0.1);
         text-transform: uppercase;
         letter-spacing: 0.5px;
+      }
+
+      .task-edit-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        width: 100%;
+      }
+
+      .task-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .task-label {
+        font-size: 11px;
+      }
+
+      .task-input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        color: var(--text-primary);
+        padding: 10px 12px;
+        font-size: 13px;
+        text-transform: none;
+        letter-spacing: 0.2px;
+      }
+
+      .task-edit-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: flex-end;
       }
 
       @media (max-width: 768px) {
@@ -655,6 +761,25 @@ export class DashboardComponent implements OnInit, OnDestroy {
   selectedOrder: WorkOrder | null = null;
   technicians$: Observable<Technician[]>;
   technicianList: Technician[] = [];
+  readonly priorityOptions: Task['priority'][] = ['preventiva', 'correttiva', 'urgente'];
+  readonly statusOptions: Array<{ value: Task['status']; label: string }> = [
+    { value: 'aperta', label: 'Aperta' },
+    { value: 'in_progress', label: 'In corso' },
+    { value: 'risolte', label: 'Risolte' },
+    { value: 'parziali', label: 'Parziali' },
+  ];
+  editingTaskId: string | null = null;
+  editTaskDraft: {
+    description: string;
+    priority: Task['priority'];
+    assignedTechnicianId: string;
+    status: Task['status'];
+  } = {
+    description: '',
+    priority: 'preventiva',
+    assignedTechnicianId: '',
+    status: 'aperta',
+  };
   private techniciansSub?: Subscription;
   orderCancellationInProgress = false;
 
@@ -704,6 +829,38 @@ export class DashboardComponent implements OnInit, OnDestroy {
         assignedTechnician: '',
       });
     }
+  }
+
+  startEditTask(task: Task): void {
+    this.editingTaskId = task.id;
+    this.editTaskDraft = {
+      description: task.description,
+      priority: task.priority,
+      assignedTechnicianId: task.assignedTechnicianId ?? '',
+      status: task.status,
+    };
+  }
+
+  cancelEditTask(): void {
+    this.editingTaskId = null;
+  }
+
+  saveTaskEdits(task: Task): void {
+    if (!this.selectedOrder) {
+      return;
+    }
+    const technician = this.technicianList.find(
+      (tech) => tech.id === this.editTaskDraft.assignedTechnicianId,
+    );
+    this.workOrderService.updateTask(this.selectedOrder.id, task.id, {
+      description: this.editTaskDraft.description,
+      priority: this.editTaskDraft.priority,
+      status: this.editTaskDraft.status,
+      assignedTechnicianId: this.editTaskDraft.assignedTechnicianId,
+      assignedTechnicianName: technician?.name ?? '',
+      assignedTechnicianNickname: technician?.nickname ?? technician?.name ?? '',
+    });
+    this.editingTaskId = null;
   }
 
   getCompletionRate(): number {

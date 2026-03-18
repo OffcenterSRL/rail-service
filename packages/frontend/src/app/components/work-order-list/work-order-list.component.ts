@@ -23,12 +23,18 @@ import { Technician, TechnicianService } from '../../services/technician.service
 
 
         <div class="new-order-section">
-          <input
-            type="text"
-            placeholder="N° Treno (es. ETR700-12)"
-            [(ngModel)]="trainNumber"
-            class="input-field"
-          />
+          <div class="train-number-fields">
+            <select [(ngModel)]="trainPrefix" class="select-field">
+              <option *ngFor="let option of trainPrefixOptions" [value]="option">
+                {{ option }}
+              </option>
+            </select>
+            <select [(ngModel)]="trainCode" class="select-field">
+              <option *ngFor="let option of trainNumberOptions" [value]="option">
+                {{ option }}
+              </option>
+            </select>
+          </div>
           <select [(ngModel)]="shift" class="select-field">
             <option *ngFor="let option of shiftOptions" [value]="option">
               {{ option }}
@@ -73,7 +79,7 @@ import { Technician, TechnicianService } from '../../services/technician.service
             <div class="order-info">
               <div>{{ order.codiceODL }}</div>
               <div class="order-created">
-                Creato {{ order.createdAt | date: 'short' }}
+                Creato {{ order.createdAt | date: 'dd/MM/yyyy HH:mm' }}
               </div>
             </div>
             <div class="order-footer">
@@ -168,9 +174,10 @@ import { Technician, TechnicianService } from '../../services/technician.service
         padding: 16px 0;
       }
 
-      .input-field {
-        width: 100%;
-        font-size: 13px;
+      .train-number-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
 
       .select-field {
@@ -356,7 +363,12 @@ export class WorkOrderListComponent implements OnInit {
   workOrders$: Observable<WorkOrder[]>;
   filteredWorkOrders$: Observable<WorkOrder[]>;
   technicians$: Observable<Technician[]>;
-  trainNumber = '';
+  trainPrefix = 'HTR312';
+  trainCode = '001';
+  readonly trainPrefixOptions = ['HTR312', 'HTR412'];
+  readonly trainNumberOptions = Array.from({ length: 100 }, (_, index) =>
+    String(index + 1).padStart(3, '0'),
+  );
   shift = '';
   readonly shiftOptions = [
     'Mattina (06-14)',
@@ -394,14 +406,16 @@ export class WorkOrderListComponent implements OnInit {
   }
 
   createOrder(): void {
-    if (!this.trainNumber.trim() || !this.shift.trim()) {
+    const trainNumber = `${this.trainPrefix}-${this.trainCode}`;
+    if (!this.trainPrefix.trim() || !this.trainCode.trim() || !this.shift.trim()) {
       return;
     }
 
     this.creatingOrder = true;
-    this.workOrderService.createWorkOrder(this.trainNumber, this.shift).subscribe({
+    this.workOrderService.createWorkOrder(trainNumber, this.shift).subscribe({
       next: () => {
-        this.trainNumber = '';
+        this.trainPrefix = this.trainPrefixOptions[0];
+        this.trainCode = this.trainNumberOptions[0];
         this.shift = '';
         this.workOrderService.saveWorkOrders();
         this.setDefaultShift();

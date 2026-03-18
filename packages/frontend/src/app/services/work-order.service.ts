@@ -98,6 +98,19 @@ export class WorkOrderService {
     this.refreshTasksForOrder(workOrderId);
   }
 
+  updateTask(workOrderId: string, taskId: string, updates: Partial<Task>): void {
+    if (!workOrderId || !taskId) {
+      return;
+    }
+    const existing = this.tasksCache[workOrderId] ?? [];
+    const next = existing.map((task) =>
+      task.id === taskId ? { ...task, ...updates } : task,
+    );
+    this.tasksCache[workOrderId] = next;
+    this.persistTasksCache();
+    this.refreshTasksForOrder(workOrderId);
+  }
+
   saveWorkOrders(): void {
     this.persistTasksCache();
   }
