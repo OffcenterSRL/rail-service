@@ -3,6 +3,8 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { Observable, Subscription } from 'rxjs';
+import { CapoturnoSession } from '../../services/auth.service';
+import { CapoturnoSessionService } from '../../services/capoturno-session.service';
 import { TechnicianService, Technician } from '../../services/technician.service';
 import {
   Task,
@@ -34,8 +36,7 @@ import {
               </p>
             </div>
             <div class="header-actions">
-              <button class="btn btn-secondary">📋 Copia codice tecnico</button>
-              <button class="btn btn-primary">📤 Esporta turno</button>
+              <button class="btn btn-secondary" type="button">📋 Copia codice tecnico</button>
               <button
                 class="btn btn-danger"
                 type="button"
@@ -761,6 +762,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   selectedOrder: WorkOrder | null = null;
   technicians$: Observable<Technician[]>;
   technicianList: Technician[] = [];
+  capoturnoName = 'Capoturno';
+  capoturnoSession: CapoturnoSession | null = null;
   readonly priorityOptions: Task['priority'][] = ['preventiva', 'correttiva', 'urgente'];
   readonly statusOptions: Array<{ value: Task['status']; label: string }> = [
     { value: 'aperta', label: 'Aperta' },
@@ -781,12 +784,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
     status: 'aperta',
   };
   private techniciansSub?: Subscription;
+  private capoturnoSessionSub?: Subscription;
   orderCancellationInProgress = false;
 
   constructor(
     private fb: FormBuilder,
     private workOrderService: WorkOrderService,
     private technicianService: TechnicianService,
+    private capoturnoSessionService: CapoturnoSessionService,
   ) {
     this.newTaskForm = this.fb.group({
       description: ['', Validators.required],
@@ -807,6 +812,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
       priority: 'preventiva',
       assignedTechnicianId: '',
     });
+    });
+    this.capoturnoSessionSub = this.capoturnoSessionService.getSession().subscribe((session) => {
+      this.capoturnoSession = session;
+      this.capoturnoName = session?.name ?? 'Capoturno';
     });
   }
 
@@ -863,6 +872,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.editingTaskId = null;
   }
 
+
   getCompletionRate(): number {
     if (!this.selectedOrder) {
       return 0;
@@ -882,6 +892,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.techniciansSub?.unsubscribe();
+    this.capoturnoSessionSub?.unsubscribe();
   }
 
   cancelWorkOrder(): void {

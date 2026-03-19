@@ -7,13 +7,11 @@ import { Subscription } from 'rxjs';
 import { APP_VERSION } from './app-version';
 import { AdminComponent } from './components/admin/admin.component';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
-import { AuthService, TechnicianSession } from './services/auth.service';
+import { AuthService, CapoturnoSession, TechnicianSession } from './services/auth.service';
+import { CapoturnoSessionService } from './services/capoturno-session.service';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
-import {
-  Task,
-  WorkOrder,
-  WorkOrderService,
-} from './services/work-order.service';
+import { Task, WorkOrder, WorkOrderService } from './services/work-order.service';
+import { Technician, TechnicianService } from './services/technician.service';
 
 type AssignedTask = {
   description: string;
@@ -21,6 +19,10 @@ type AssignedTask = {
   status: Task['status'];
   orderCode: string;
   trainNumber: string;
+  orderId: string;
+  taskId: string;
+  performedBy?: Task['performedBy'];
+  timeSpentMinutes?: number;
 };
 
 @Component({
@@ -67,47 +69,57 @@ type AssignedTask = {
                 Admin
               </button>
             </div>
+            <button
+              *ngIf="viewMode === 'capoturno' && capoturnoSession"
+              class="logout-btn"
+              type="button"
+              (click)="logoutCapoturno()"
+            >
+              Esci
+            </button>
+            <button
+              *ngIf="viewMode === 'tecnico' && technicianSession"
+              class="logout-btn"
+              type="button"
+              (click)="logoutTechnician()"
+            >
+              Esci
+            </button>
           </div>
         </div>
       </header>
 
-      <section class="hero-strip" *ngIf="viewMode !== 'tecnico'">
+      <section class="hero-strip" *ngIf="viewMode !== 'tecnico' && !(viewMode === 'capoturno' && !capoturnoSession)">
         <div class="hero-strip-top">
-          <div class="hero-copy">
-            <p class="hero-label">Dashboard Operativa</p>
-            <h1>ETR700-12 • Turno Mattina</h1>
-            <p class="hero-subtitle">
-              {{
-                viewMode === 'capoturno'
-                  ? 'Turno attivo · monitora gli ordini e i tecnici assegnati'
+            <div class="hero-copy">
+              <p class="hero-label">Dashboard Operativa</p>
+              <h1>
+              {{ capoturnoName }} • Turno {{ getShiftLabel(capoturnoShift) }}
+              </h1>
+              <button
+                *ngIf="viewMode === 'capoturno' && capoturnoSession"
+                class="hero-export"
+                type="button"
+                (click)="exportCapoturnoShift()"
+              >
+                Esporta turno
+              </button>
+              <p class="hero-subtitle">
+                {{
+                  viewMode === 'capoturno'
+                  ? ''
                   : 'Admin view · aggiorna i tecnici e i parametri operativi'
-              }}
-            </p>
+                }}
+              </p>
           </div>
           <div class="hero-metrics">
             <div class="metric-card">
-              <span class="metric-value">{{
-                dashboardStats.interventions
-              }}</span>
+              <span class="metric-value">{{ getOpenOrdersForShift().length }}</span>
               <span class="metric-label">Interventi totali</span>
             </div>
             <div class="metric-card">
-              <span class="metric-value">{{
-                dashboardStats.shiftsCompleted
-              }}</span>
-              <span class="metric-label">Turni completati</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value">{{
-                dashboardStats.activeTickets
-              }}</span>
+              <span class="metric-value">{{ getOpenOrdersForShift().length }}</span>
               <span class="metric-label">ODL attivi</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value">{{
-                dashboardStats.cancelledTickets
-              }}</span>
-              <span class="metric-label">ODL cancellati</span>
             </div>
             <div class="metric-card">
               <span class="metric-value">{{
@@ -122,15 +134,58 @@ type AssignedTask = {
       <div class="main-layout">
         <ng-container [ngSwitch]="viewMode">
           <ng-container *ngSwitchCase="'capoturno'">
-            <aside class="sidebar">
-              <div class="sidebar-content">
-                <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
-                <app-work-order-list></app-work-order-list>
+            <ng-container *ngIf="capoturnoSession; else capoturnoLogin">
+              <aside class="sidebar">
+                <div class="sidebar-content">
+                  <div class="assigned-header">
+                    <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
+                  </div>
+                  <app-work-order-list></app-work-order-list>
+                </div>
+              </aside>
+              <main class="main-content">
+                <router-outlet></router-outlet>
+              </main>
+            </ng-container>
+            <ng-template #capoturnoLogin>
+              <div class="tecnico-panel">
+                <div class="panel-shell">
+                  <div class="panel-heading">
+                    <h2>Login Capoturno</h2>
+                    <span class="panel-subtitle">
+                      Accedi con nickname, matricola e turno per gestire gli ordini.
+                    </span>
+                  </div>
+                  <p
+                    *ngIf="capoturnoLoginState"
+                    class="login-message"
+                    [class.success]="capoturnoLoginState.type === 'success'"
+                    [class.error]="capoturnoLoginState.type === 'error'"
+                  >
+                    {{ capoturnoLoginState.message }}
+                  </p>
+                  <div class="field">
+                    <label>Nickname</label>
+                    <input type="text" [(ngModel)]="capoturnoNickname" placeholder="es. Giulia" />
+                  </div>
+                  <div class="field">
+                    <label>Matricola</label>
+                    <input type="text" [(ngModel)]="capoturnoMatricola" placeholder="C-2001" />
+                  </div>
+                  <div class="field">
+                    <label>Turno</label>
+                    <select [(ngModel)]="capoturnoShift">
+                      <option *ngFor="let option of capoturnoShiftOptions" [value]="option">
+                        {{ option }}
+                      </option>
+                    </select>
+                  </div>
+                  <button class="btn btn-primary" (click)="loginCapoturno()">
+                    Accedi come capoturno
+                  </button>
+                </div>
               </div>
-            </aside>
-            <main class="main-content">
-              <router-outlet></router-outlet>
-            </main>
+            </ng-template>
           </ng-container>
 
           <ng-container *ngSwitchCase="'tecnico'">
@@ -176,24 +231,6 @@ type AssignedTask = {
                   <div class="assigned-header">
                     <h3>Lavorazioni per {{ technicianSession.nickname }}</h3>
                     <div class="assigned-actions">
-                      <button
-                        type="button"
-                        class="btn btn-secondary"
-                        (click)="toggleShowCompletedOrders()"
-                      >
-                        {{
-                          showCompletedOrders
-                            ? 'Nascondi ODL completati'
-                            : 'Mostra ODL completati'
-                        }}
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-tertiary"
-                        (click)="logoutTechnician()"
-                      >
-                        Esci
-                      </button>
                     </div>
                   </div>
                   <div class="assigned-controls">
@@ -207,7 +244,12 @@ type AssignedTask = {
                   <div *ngIf="assignedTasks.length === 0" class="task-empty">
                     <p>Nessuna lavorazione assegnata per il momento.</p>
                   </div>
-                  <div *ngFor="let item of assignedTasks" class="assigned-task">
+                  <div
+                    *ngFor="let item of assignedTasks"
+                    class="assigned-task"
+                    [class.active]="selectedTask?.taskId === item.taskId"
+                    (click)="openTaskCompilation(item)"
+                  >
                     <div class="assigned-task-header">
                       <span class="task-order"
                         >{{ item.orderCode }} · {{ item.trainNumber }}</span
@@ -220,6 +262,66 @@ type AssignedTask = {
                     <span class="task-priority" [ngClass]="item.priority">{{
                       item.priority | titlecase
                     }}</span>
+                  </div>
+                  <div *ngIf="selectedTask" class="task-compile-card">
+                  <div class="compile-header" *ngIf="selectedTask as currentTask">
+                    <h4>Compila lavorazione</h4>
+                      <span>{{ currentTask.orderCode }} · {{ currentTask.trainNumber }}</span>
+                    <span class="status-pill" [ngClass]="currentTask.status">
+                      {{ taskStatusLabel(currentTask.status) }}
+                    </span>
+                  </div>
+                    <label class="compile-field">
+                      <span>Stato lavorazione</span>
+                      <select [(ngModel)]="taskStatus">
+                        <option value="aperta">Aperta</option>
+                        <option value="in_progress">In corso</option>
+                        <option value="parziali">Parziali</option>
+                        <option value="risolte">Completato</option>
+                      </select>
+                    </label>
+                    <label class="compile-field">
+                      <span>Tempo totale</span>
+                      <div class="compile-time">
+                        <select [(ngModel)]="taskTimeSpentHours">
+                          <option *ngFor="let hour of timeHoursOptions" [value]="hour">
+                            {{ hour }} h
+                          </option>
+                        </select>
+                        <select [(ngModel)]="taskTimeSpentMinutes">
+                          <option *ngFor="let minute of timeMinutesOptions" [value]="minute">
+                            {{ minute }} min
+                          </option>
+                        </select>
+                      </div>
+                    </label>
+                    <div class="compile-technicians">
+                      <div
+                        *ngFor="let row of taskTechnicians; let i = index"
+                        class="compile-tech-row"
+                      >
+                        <select [(ngModel)]="row.technicianId">
+                          <option value="">Seleziona tecnico</option>
+                          <option *ngFor="let tech of technicianList" [value]="tech.id">
+                            {{ tech.name }}
+                          </option>
+                        </select>
+                        <span class="tech-matricola">{{
+                          getTechnicianMatricola(row.technicianId)
+                        }}</span>
+                        <button type="button" class="btn btn-tertiary" (click)="removeTechnicianRow(i)">
+                          Rimuovi
+                        </button>
+                      </div>
+                      <button type="button" class="btn btn-tertiary" (click)="addTechnicianRow()">
+                        Aggiungi tecnico
+                      </button>
+                    </div>
+                    <div class="compile-actions">
+                      <button class="btn btn-primary" type="button" (click)="saveTaskCompilation()">
+                        Salva compilazione
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -339,6 +441,26 @@ type AssignedTask = {
         margin-bottom: 4px;
       }
 
+      .hero-export {
+        margin-top: 6px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .hero-export:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+      }
+
       .hero-subtitle {
         font-size: 13px;
         color: var(--text-secondary);
@@ -411,6 +533,26 @@ type AssignedTask = {
         background: rgba(255, 255, 255, 0.18);
         color: #fff;
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+      }
+
+      .logout-btn {
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 77, 79, 0.5);
+        background: rgba(255, 77, 79, 0.12);
+        color: #ff6b6b;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      }
+
+      .logout-btn:hover {
+        transform: translateY(-1px);
+        border-color: rgba(255, 77, 79, 0.8);
+        box-shadow: 0 10px 18px rgba(255, 77, 79, 0.25);
       }
 
       .tecnico-login {
@@ -551,6 +693,14 @@ type AssignedTask = {
         display: flex;
         flex-direction: column;
         gap: 6px;
+        cursor: pointer;
+        transition: border-color 0.2s ease, transform 0.2s ease;
+      }
+
+      .assigned-task.active {
+        border-color: rgba(123, 199, 255, 0.6);
+        box-shadow: 0 12px 24px rgba(75, 110, 245, 0.2);
+        transform: translateY(-1px);
       }
 
       .assigned-task-header {
@@ -574,6 +724,123 @@ type AssignedTask = {
         border-radius: 999px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
+      }
+
+      .task-compile-card {
+        margin-top: 16px;
+        background: rgba(15, 18, 32, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .compile-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .status-pill {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .status-pill.aperta {
+        background: rgba(255, 124, 45, 0.18);
+        color: #ff9d5c;
+      }
+
+      .status-pill.in_progress {
+        background: rgba(124, 199, 255, 0.16);
+        color: #7bc7ff;
+      }
+
+      .status-pill.risolte {
+        background: rgba(130, 255, 169, 0.16);
+        color: #82ffa9;
+      }
+
+      .status-pill.parziali {
+        background: rgba(255, 214, 102, 0.16);
+        color: #ffd666;
+      }
+
+      .compile-header h4 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 16px;
+      }
+
+      .compile-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .compile-field input {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        color: var(--text-primary);
+        padding: 10px 12px;
+      }
+
+      .compile-time {
+        display: flex;
+        gap: 10px;
+      }
+
+      .compile-time select {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        color: var(--text-primary);
+        padding: 10px 12px;
+      }
+
+      .compile-technicians {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .compile-tech-row {
+        display: grid;
+        grid-template-columns: minmax(200px, 1fr) minmax(140px, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .compile-tech-row select {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        color: var(--text-primary);
+        padding: 8px 10px;
+      }
+
+      .tech-matricola {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .compile-actions {
+        display: flex;
+        justify-content: flex-end;
       }
 
       .task-description {
@@ -773,7 +1040,26 @@ export class AppComponent implements OnInit, OnDestroy {
   tecMatricola = '';
   loginState: { type: 'success' | 'error'; message: string } | null = null;
   technicianSession: TechnicianSession | null = null;
+  capoturnoSession: CapoturnoSession | null = null;
   assignedTasks: AssignedTask[] = [];
+  technicianList: Technician[] = [];
+  selectedTask: AssignedTask | null = null;
+  taskTimeSpentHours = '0';
+  taskTimeSpentMinutes = '0';
+  taskStatus: Task['status'] = 'aperta';
+  taskTechnicians: Array<{ technicianId: string }> = [{ technicianId: '' }];
+  selectedWorkOrder: WorkOrder | null = null;
+  capoturnoName = 'Capoturno';
+  capoturnoNickname = '';
+  capoturnoMatricola = '';
+  capoturnoShift = 'Mattina (06-14)';
+  readonly capoturnoShiftOptions = [
+    'Mattina (06-14)',
+    'Pomeriggio (14-22)',
+    'Notte (22-06)',
+  ];
+  capoturnoLoginState: { type: 'success' | 'error'; message: string } | null = null;
+  allWorkOrders: WorkOrder[] = [];
   searchTerm = '';
   showCompletedOrders = false;
   appVersion = APP_VERSION;
@@ -787,10 +1073,17 @@ export class AppComponent implements OnInit, OnDestroy {
   };
   private dashboardService = inject(DashboardService);
   private authService = inject(AuthService);
+  private capoturnoSessionService = inject(CapoturnoSessionService);
   private workOrderService = inject(WorkOrderService);
+  private technicianService = inject(TechnicianService);
   private router = inject(Router);
   private assignedTasksSub?: Subscription;
+  private techniciansSub?: Subscription;
+  private workOrdersSub?: Subscription;
+  private selectedWorkOrderSub?: Subscription;
   private workOrdersSnapshot: WorkOrder[] = [];
+  readonly timeHoursOptions = Array.from({ length: 13 }, (_, index) => String(index));
+  readonly timeMinutesOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
   private readonly technicianStorageKey = 'rail-service.tech-session';
   private readonly viewModeStorageKey = 'rail-service.view-mode';
 
@@ -872,10 +1165,57 @@ export class AppComponent implements OnInit, OnDestroy {
       });
   }
 
+  loginCapoturno(): void {
+    if (!this.capoturnoNickname || !this.capoturnoMatricola || !this.capoturnoShift) {
+      this.capoturnoLoginState = {
+        type: 'error',
+        message: 'Inserisci nickname, matricola e turno per accedere.',
+      };
+      return;
+    }
+
+    this.authService
+      .loginCapoturno({
+        nickname: this.capoturnoNickname,
+        matricola: this.capoturnoMatricola,
+      })
+      .subscribe({
+        next: (session) => {
+          this.capoturnoSessionService.setSession({
+            ...session,
+            shift: this.capoturnoShift,
+          });
+          this.capoturnoLoginState = { type: 'success', message: session.message };
+        },
+        error: (error) => {
+          const message = error?.error?.error ?? 'Errore durante il login capoturno.';
+          this.capoturnoLoginState = { type: 'error', message };
+        },
+      });
+  }
+
   ngOnInit(): void {
     this.restoreViewMode();
     this.loadDashboardStats();
     this.restoreTechnicianSession();
+    this.capoturnoSessionService.getSession().subscribe((session) => {
+      this.capoturnoSession = session;
+      this.capoturnoName = session?.name ?? 'Capoturno';
+      if (session?.shift) {
+        this.capoturnoShift = session.shift;
+      }
+    });
+    this.workOrdersSub = this.workOrderService.getWorkOrders().subscribe((orders) => {
+      this.allWorkOrders = orders;
+    });
+    this.techniciansSub = this.technicianService.getTechnicians().subscribe((list) => {
+      this.technicianList = list;
+    });
+    this.selectedWorkOrderSub = this.workOrderService
+      .getSelectedWorkOrder()
+      .subscribe((order) => {
+        this.selectedWorkOrder = order;
+      });
   }
 
   private loadDashboardStats(): void {
@@ -911,6 +1251,186 @@ export class AppComponent implements OnInit, OnDestroy {
       });
   }
 
+  getShiftLabel(shift?: string): string {
+    if (!shift) {
+      return 'In corso';
+    }
+    const normalized = shift.toLowerCase();
+    if (normalized.includes('mattina') || normalized.includes('06-14')) {
+      return 'Mattina';
+    }
+    if (normalized.includes('pomeriggio') || normalized.includes('14-22')) {
+      return 'Pomeriggio';
+    }
+    if (normalized.includes('notte') || normalized.includes('22-06')) {
+      return 'Notte';
+    }
+    return shift;
+  }
+
+  getOpenOrdersForShift(): WorkOrder[] {
+    const shift = this.capoturnoShift;
+    return this.allWorkOrders.filter(
+      (order) => order.shift === shift && order.status !== 'completed' && order.status !== 'cancelled',
+    );
+  }
+
+  exportCapoturnoShift(): void {
+    if (!this.capoturnoSession) {
+      return;
+    }
+    const shift = this.capoturnoShift;
+    const orders = this.allWorkOrders.filter((order) => order.shift === shift);
+    const rows = orders.flatMap((order) => {
+      if (!order.tasks.length) {
+        return [
+          `
+          <tr>
+            <td>${this.escapeHtml(order.trainNumber)}</td>
+            <td>${this.escapeHtml(order.codiceODL)}</td>
+            <td>${this.escapeHtml(order.shift)}</td>
+            <td>${this.escapeHtml(this.formatStatus(order.status))}</td>
+            <td>${this.escapeHtml(this.formatDateForExport(order.createdAt))}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
+          `,
+        ];
+      }
+      return order.tasks.map(
+        (task, index) => `
+          <tr>
+            <td>${this.escapeHtml(order.trainNumber)}</td>
+            <td>${this.escapeHtml(order.codiceODL)}</td>
+            <td>${this.escapeHtml(order.shift)}</td>
+            <td>${this.escapeHtml(this.formatStatus(order.status))}</td>
+            <td>${this.escapeHtml(this.formatDateForExport(order.createdAt))}</td>
+            <td>${index + 1}</td>
+            <td>${this.escapeHtml(task.description)}</td>
+            <td>${this.escapeHtml(this.formatPriority(task.priority))}</td>
+            <td>${this.escapeHtml(this.formatStatus(task.status))}</td>
+            <td>${this.escapeHtml(task.assignedTechnicianName)}</td>
+            <td>${this.escapeHtml(task.assignedTechnicianNickname)}</td>
+            <td>${this.escapeHtml(task.assignedTechnicianId ?? '')}</td>
+          </tr>
+        `,
+      );
+    });
+
+    const html = `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }
+            th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
+            th { background: #f0f0f0; text-align: left; }
+            .meta td { border: none; padding: 4px 0; }
+          </style>
+        </head>
+        <body>
+          <h3>Turno ${this.escapeHtml(this.capoturnoName)} • ${this.escapeHtml(shift)}</h3>
+          <table class="meta">
+            <tr><td><strong>Capoturno:</strong> ${this.escapeHtml(this.capoturnoName)}</td></tr>
+            <tr><td><strong>Matricola:</strong> ${this.escapeHtml(this.capoturnoSession.matricola)}</td></tr>
+            <tr><td><strong>Turno:</strong> ${this.escapeHtml(shift)}</td></tr>
+            <tr><td><strong>Esportato il:</strong> ${this.escapeHtml(this.formatDateForExport(new Date()))}</td></tr>
+          </table>
+          <br />
+          <table>
+            <thead>
+              <tr>
+                <th>Treno</th>
+                <th>Codice ODL</th>
+                <th>Turno</th>
+                <th>Stato ODL</th>
+                <th>Creato il</th>
+                <th>#</th>
+                <th>Descrizione</th>
+                <th>Priorità</th>
+                <th>Stato Task</th>
+                <th>Tecnico</th>
+                <th>Nickname</th>
+                <th>ID Tecnico</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.join('') : '<tr><td colspan="12">Nessun ordine nel turno selezionato</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const filename = `turno-${this.escapeFilename(this.capoturnoName)}-${this.formatDateForFilename(
+      new Date(),
+    )}.xls`;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  private formatDateForExport(date?: Date): string {
+    if (!date) {
+      return '';
+    }
+    return new Intl.DateTimeFormat('it-IT', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(date));
+  }
+
+  private formatDateForFilename(date?: Date): string {
+    if (!date) {
+      return 'sconosciuta';
+    }
+    const formatted = this.formatDateForExport(date).replace(/[/: ]+/g, '-');
+    return formatted.toLowerCase();
+  }
+
+  private formatPriority(priority: Task['priority']): string {
+    if (priority === 'preventiva') return 'Preventiva';
+    if (priority === 'correttiva') return 'Correttiva';
+    return 'Urgente';
+  }
+
+  private formatStatus(status: Task['status'] | WorkOrder['status']): string {
+    if (status === 'in_progress') return 'In corso';
+    if (status === 'risolte') return 'Risolte';
+    if (status === 'parziali') return 'Parziali';
+    if (status === 'aperta') return 'Aperta';
+    if (status === 'pending') return 'In attesa';
+    if (status === 'active') return 'In corso';
+    if (status === 'completed') return 'Completato';
+    if (status === 'cancelled') return 'Annullato';
+    return String(status);
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private escapeFilename(value: string): string {
+    return value.replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/-+/g, '-').toLowerCase();
+  }
+
   logoutTechnician(): void {
     this.clearStoredTechnicianSession();
     this.clearTechnicianSession();
@@ -921,24 +1441,28 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loginState = { type: 'success', message: 'Logout completato.' };
   }
 
+  logoutCapoturno(): void {
+    this.capoturnoSessionService.clearSession();
+    this.capoturnoNickname = '';
+    this.capoturnoMatricola = '';
+    this.capoturnoShift = this.capoturnoShiftOptions[0];
+    this.capoturnoLoginState = { type: 'success', message: 'Logout completato.' };
+  }
+
   private updateAssignedTasksView(normalized: string): void {
     let tasks = this.workOrdersSnapshot.flatMap((order) =>
       order.tasks
-        .filter((task: Task) => {
-          const nicknameMatch =
-            task.assignedTechnicianNickname?.toLowerCase() === normalized;
-          const nameMatch =
-            task.assignedTechnicianName?.toLowerCase() === normalized;
-          const includeOrder =
-            this.showCompletedOrders || order.status !== 'completed';
-          return includeOrder && (nicknameMatch || nameMatch);
-        })
+        .filter(() => true)
         .map((task: Task) => ({
           description: task.description,
           priority: task.priority,
           status: task.status,
           orderCode: order.codiceODL,
           trainNumber: order.trainNumber,
+          orderId: order.id,
+          taskId: task.id,
+          performedBy: task.performedBy,
+          timeSpentMinutes: task.timeSpentMinutes,
         })),
     );
     const search = this.searchTerm.trim().toLowerCase();
@@ -951,6 +1475,100 @@ export class AppComponent implements OnInit, OnDestroy {
       );
     }
     this.assignedTasks = tasks;
+    if (this.selectedTask) {
+      const refreshed =
+        this.assignedTasks.find((task) => task.taskId === this.selectedTask?.taskId) ?? null;
+      this.selectedTask = refreshed;
+      if (!refreshed) {
+        this.taskTimeSpentHours = '0';
+        this.taskTimeSpentMinutes = '00';
+        this.taskStatus = 'aperta';
+        this.taskTechnicians = [{ technicianId: '' }];
+      }
+    }
+  }
+
+  openTaskCompilation(task: AssignedTask): void {
+    this.selectedTask = task;
+    if (task.timeSpentMinutes) {
+      const hours = Math.floor(task.timeSpentMinutes / 60);
+      const minutes = task.timeSpentMinutes % 60;
+      this.taskTimeSpentHours = String(hours);
+      this.taskTimeSpentMinutes = minutes.toString().padStart(2, '0');
+    } else {
+      this.taskTimeSpentHours = '0';
+      this.taskTimeSpentMinutes = '00';
+    }
+    this.taskStatus = task.status;
+    if (task.performedBy?.length) {
+      this.taskTechnicians = task.performedBy.map((tech) => ({ technicianId: tech.id }));
+    } else {
+      this.taskTechnicians = [{ technicianId: this.findLoggedTechnicianId() }];
+    }
+  }
+
+  addTechnicianRow(): void {
+    this.taskTechnicians = [...this.taskTechnicians, { technicianId: '' }];
+  }
+
+  removeTechnicianRow(index: number): void {
+    if (this.taskTechnicians.length <= 1) {
+      this.taskTechnicians = [{ technicianId: '' }];
+      return;
+    }
+    this.taskTechnicians = this.taskTechnicians.filter((_, i) => i !== index);
+  }
+
+  saveTaskCompilation(): void {
+    if (!this.selectedTask) {
+      return;
+    }
+    const hours = Number(this.taskTimeSpentHours);
+    const minutes = Number(this.taskTimeSpentMinutes);
+    const timeSpentMinutes = hours * 60 + minutes;
+    if (Number.isNaN(timeSpentMinutes) || timeSpentMinutes < 0) {
+      return;
+    }
+    const performedBy = this.taskTechnicians
+      .map((row) => this.technicianList.find((tech) => tech.id === row.technicianId))
+      .filter((tech): tech is Technician => !!tech)
+      .map((tech) => ({
+        id: tech.id,
+        name: tech.name,
+        matricola: tech.matricola,
+      }));
+
+    this.workOrderService.updateTask(this.selectedTask.orderId, this.selectedTask.taskId, {
+      timeSpentMinutes,
+      performedBy,
+      status: this.taskStatus,
+    });
+    this.selectedTask = null;
+  }
+
+  taskStatusLabel(status: Task['status']): string {
+    if (status === 'in_progress') return 'In corso';
+    if (status === 'risolte') return 'Risolte';
+    if (status === 'parziali') return 'Parziali';
+    return 'Aperta';
+  }
+
+  getTechnicianMatricola(technicianId: string): string {
+    const technician = this.technicianList.find((tech) => tech.id === technicianId);
+    return technician?.matricola ?? '';
+  }
+
+  private findLoggedTechnicianId(): string {
+    if (!this.technicianSession) {
+      return '';
+    }
+    const normalizedMatricola = this.technicianSession.matricola.toUpperCase();
+    const match = this.technicianList.find(
+      (tech) =>
+        tech.matricola.toUpperCase() === normalizedMatricola ||
+        tech.nickname.toLowerCase() === this.technicianSession?.nickname.toLowerCase(),
+    );
+    return match?.id ?? '';
   }
 
   private restoreTechnicianSession(): void {
@@ -1034,5 +1652,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.assignedTasksSub?.unsubscribe();
+    this.techniciansSub?.unsubscribe();
+    this.workOrdersSub?.unsubscribe();
+    this.selectedWorkOrderSub?.unsubscribe();
   }
 }

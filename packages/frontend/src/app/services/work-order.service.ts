@@ -11,6 +11,8 @@ export interface Task {
   assignedTechnicianName: string;
   assignedTechnicianNickname: string;
   status: 'aperta' | 'in_progress' | 'risolte' | 'parziali';
+  timeSpentMinutes?: number;
+  performedBy?: Array<{ id: string; name: string; matricola: string }>;
 }
 
 export interface WorkOrder {
@@ -31,7 +33,7 @@ export class WorkOrderService {
   private workOrders$ = new BehaviorSubject<WorkOrder[]>([]);
   private selectedWorkOrder$ = new BehaviorSubject<WorkOrder | null>(null);
   private tasksCache: Record<string, Task[]> = {};
-  private orderMeta: Record<string, { assignedTechnician?: string }> = {};
+  private orderMeta: Record<string, { assignedTechnician?: string; odlNumber?: string }> = {};
   private readonly tasksStorageKey = 'rail-work-order-tasks';
   private readonly metaStorageKey = 'rail-work-order-meta';
 
@@ -53,12 +55,20 @@ export class WorkOrderService {
     this.selectedWorkOrder$.next(workOrder);
   }
 
-  createWorkOrder(trainNumber: string, shift: string, assignedTechnician?: string): Observable<WorkOrder> {
+  createWorkOrder(
+    trainNumber: string,
+    shift: string,
+    assignedTechnician?: string,
+    odlNumber?: string,
+  ): Observable<WorkOrder> {
     const payload = this.buildPayloadForShift(trainNumber, shift);
     return this.ticketService.bookTicket(payload).pipe(
       map((ticket) => {
-        if (assignedTechnician) {
-          this.orderMeta[ticket._id] = { assignedTechnician };
+        if (assignedTechnician || odlNumber) {
+          this.orderMeta[ticket._id] = {
+            assignedTechnician,
+            odlNumber,
+          };
           this.persistOrderMetaCache();
         }
         return this.mergeTicket(ticket);
@@ -139,13 +149,17 @@ export class WorkOrderService {
     return order;
   }
 
-  private mapTicketToWorkOrder(ticket: TicketRecord, meta?: { assignedTechnician?: string }): WorkOrder {
+  private mapTicketToWorkOrder(
+    ticket: TicketRecord,
+    meta?: { assignedTechnician?: string; odlNumber?: string },
+  ): WorkOrder {
     const tasks = this.tasksCache[ticket._id] ?? [];
+    const manualOdl = meta?.odlNumber?.trim();
     return {
       id: ticket._id,
       trainNumber: ticket.trainId,
       shift: this.shiftFromTimestamp(ticket.departureTime),
-      codiceODL: this.generateCodiceODL(ticket._id),
+      codiceODL: manualOdl ? `ODL-${manualOdl}` : 'ODL-N/D',
       status: this.ticketStatusToWorkOrderStatus(ticket.status),
       tasks,
       createdAt: new Date(ticket.bookingDate),
@@ -229,11 +243,6 @@ export class WorkOrderService {
       return 'completed';
     }
     return 'pending';
-  }
-
-  private generateCodiceODL(id: string): string {
-    const clean = id.replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase();
-    return `ODL-${clean || Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   }
 
   private generateTaskId(): string {

@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { WorkOrder, WorkOrderService } from '../../services/work-order.service';
+import { CapoturnoSessionService } from '../../services/capoturno-session.service';
+import { CapoturnoSession } from '../../services/auth.service';
 import { Technician, TechnicianService } from '../../services/technician.service';
 
 @Component({
@@ -15,10 +17,8 @@ import { Technician, TechnicianService } from '../../services/technician.service
       <ng-container *ngIf="filteredWorkOrders$ | async as workOrders">
         <div class="list-header">
           <div>
-            <p class="header-label">Ordini salvati</p>
-            <h3 class="header-title">Seleziona un turno</h3>
+            <h3 class="header-title">Seleziona treno</h3>
           </div>
-          <span class="orders-count">{{ workOrders.length }} elementi</span>
         </div>
 
 
@@ -35,11 +35,14 @@ import { Technician, TechnicianService } from '../../services/technician.service
               </option>
             </select>
           </div>
-          <select [(ngModel)]="shift" class="select-field">
-            <option *ngFor="let option of shiftOptions" [value]="option">
-              {{ option }}
-            </option>
-          </select>
+          <input
+            type="text"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="Numero ODL (10 cifre)"
+            [(ngModel)]="odlNumber"
+            class="input-field"
+          />
           <button (click)="createOrder()" class="btn-create" [disabled]="creatingOrder">
             {{ creatingOrder ? 'Creazione...' : 'Nuovo +' }}
           </button>
@@ -84,9 +87,16 @@ import { Technician, TechnicianService } from '../../services/technician.service
             </div>
             <div class="order-footer">
               <div class="order-meta">
-              <span>{{ order.tasks.length }} lavorazioni</span>
-              <span>{{ order.shift }}</span>
             </div>
+            </div>
+            <div class="order-progress">
+              <div class="order-progress-label">
+                <span>Avanzamento</span>
+                <span>{{ getCompletionRate(order) }}%</span>
+              </div>
+              <div class="order-progress-track">
+                <span class="order-progress-bar" [style.width.%]="getCompletionRate(order)"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -178,6 +188,16 @@ import { Technician, TechnicianService } from '../../services/technician.service
         display: flex;
         flex-direction: column;
         gap: 8px;
+      }
+
+      .input-field {
+        width: 100%;
+        font-size: 13px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
+        border-radius: 12px;
+        padding: 10px 14px;
       }
 
       .select-field {
@@ -303,6 +323,34 @@ import { Technician, TechnicianService } from '../../services/technician.service
         flex-wrap: wrap;
       }
 
+      .order-progress {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .order-progress-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+      }
+
+      .order-progress-track {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .order-progress-bar {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #7bc7ff, #4b6ef5);
+      }
+
       .order-assignment {
         font-size: 12px;
         color: var(--text-secondary);
@@ -365,22 +413,19 @@ export class WorkOrderListComponent implements OnInit {
   technicians$: Observable<Technician[]>;
   trainPrefix = 'HTR312';
   trainCode = '001';
+  odlNumber = '';
   readonly trainPrefixOptions = ['HTR312', 'HTR412'];
   readonly trainNumberOptions = Array.from({ length: 100 }, (_, index) =>
     String(index + 1).padStart(3, '0'),
   );
-  shift = '';
-  readonly shiftOptions = [
-    'Mattina (06-14)',
-    'Pomeriggio (14-22)',
-    'Notte (22-06)',
-  ];
+  capoturnoSession: CapoturnoSession | null = null;
   creatingOrder = false;
   searchTerm = '';
   showCompletedOrders = false;
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
   private technicianService = inject(TechnicianService);
+  private capoturnoSessionService = inject(CapoturnoSessionService);
   private readonly searchTerm$ = new BehaviorSubject('');
   private readonly showCompleted$ = new BehaviorSubject(false);
 
@@ -396,7 +441,9 @@ export class WorkOrderListComponent implements OnInit {
         this.filterOrders(orders, searchValue, showCompleted),
       ),
     );
-    this.setDefaultShift();
+    this.capoturnoSessionService.getSession().subscribe((session) => {
+      this.capoturnoSession = session;
+    });
   }
 
   ngOnInit(): void {
@@ -407,18 +454,22 @@ export class WorkOrderListComponent implements OnInit {
 
   createOrder(): void {
     const trainNumber = `${this.trainPrefix}-${this.trainCode}`;
-    if (!this.trainPrefix.trim() || !this.trainCode.trim() || !this.shift.trim()) {
+    const shift = this.capoturnoSession?.shift ?? '';
+    const odlNumber = this.odlNumber.trim();
+    if (!this.trainPrefix.trim() || !this.trainCode.trim() || !shift.trim()) {
+      return;
+    }
+    if (!/^\d{10}$/.test(odlNumber)) {
       return;
     }
 
     this.creatingOrder = true;
-    this.workOrderService.createWorkOrder(trainNumber, this.shift).subscribe({
+    this.workOrderService.createWorkOrder(trainNumber, shift, undefined, odlNumber).subscribe({
       next: () => {
         this.trainPrefix = this.trainPrefixOptions[0];
         this.trainCode = this.trainNumberOptions[0];
-        this.shift = '';
+        this.odlNumber = '';
         this.workOrderService.saveWorkOrders();
-        this.setDefaultShift();
         this.creatingOrder = false;
       },
       error: () => {
@@ -443,6 +494,15 @@ export class WorkOrderListComponent implements OnInit {
       cancelled: 'Annullato',
     };
     return map[status];
+  }
+
+  getCompletionRate(order: WorkOrder): number {
+    const total = order.tasks.length;
+    if (!total) {
+      return 0;
+    }
+    const resolved = order.tasks.filter((task) => task.status === 'risolte').length;
+    return Math.round((resolved / total) * 100);
   }
 
   updateSearchTerm(value: string): void {
@@ -481,18 +541,5 @@ export class WorkOrderListComponent implements OnInit {
     });
   }
 
-  private getCurrentShift(): string {
-    const hour = new Date().getHours();
-    if (hour >= 6 && hour < 14) {
-      return 'Mattina (06-14)';
-    }
-    if (hour >= 14 && hour < 22) {
-      return 'Pomeriggio (14-22)';
-    }
-    return 'Notte (22-06)';
-  }
-
-  private setDefaultShift(): void {
-    this.shift = this.getCurrentShift();
-  }
+  // Intentionally no local shift selection: uses capoturno session.
 }

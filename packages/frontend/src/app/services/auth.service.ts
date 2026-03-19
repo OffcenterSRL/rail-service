@@ -12,6 +12,14 @@ export interface TechnicianSession {
   message: string;
 }
 
+export interface CapoturnoSession {
+  name: string;
+  nickname: string;
+  matricola: string;
+  shift: string;
+  message: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -24,6 +32,15 @@ export class AuthService {
   }): Observable<TechnicianSession> {
     return this.http
       .post<{ data: TechnicianSession }>(`${API_BASE_URL}/auth/technician-login`, payload)
+      .pipe(map((response) => response.data));
+  }
+
+  loginCapoturno(payload: {
+    nickname: string;
+    matricola: string;
+  }): Observable<CapoturnoSession> {
+    return this.http
+      .post<{ data: CapoturnoSession }>(`${API_BASE_URL}/auth/capoturno-login`, payload)
       .pipe(map((response) => response.data));
   }
 }

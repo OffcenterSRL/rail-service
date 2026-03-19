@@ -12,6 +12,13 @@ export interface TechnicianConfig {
   team: string;
 }
 
+export interface CapoturnoConfig {
+  id?: string;
+  name: string;
+  nickname: string;
+  matricola: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -62,6 +69,50 @@ export class AdminConfigService {
   deleteTechnician(password: string, technicianId: string): Observable<TechnicianConfig[]> {
     return this.http
       .delete<{ data: TechnicianConfig[] }>(`${API_BASE_URL}/admin/technicians/${technicianId}`, {
+        headers: this.buildHeaders(password),
+      })
+      .pipe(map((response) => response.data));
+  }
+
+  getCapoturni(password: string): Observable<CapoturnoConfig[]> {
+    return this.http
+      .get<{ data: CapoturnoConfig[] }>(`${API_BASE_URL}/admin/capoturni`, {
+        headers: this.buildHeaders(password),
+      })
+      .pipe(map((response) => response.data));
+  }
+
+  updateCapoturni(password: string, capoturni: CapoturnoConfig[]): Observable<CapoturnoConfig[]> {
+    return this.http
+      .put<{ data: CapoturnoConfig[] }>(
+        `${API_BASE_URL}/admin/capoturni`,
+        { capoturni },
+        { headers: this.buildHeaders(password) },
+      )
+      .pipe(map((response) => response.data));
+  }
+
+  saveCapoturno(password: string, capoturno: CapoturnoConfig): Observable<CapoturnoConfig> {
+    const headers = this.buildHeaders(password);
+    const payload = {
+      name: capoturno.name,
+      nickname: capoturno.nickname,
+      matricola: capoturno.matricola,
+      id: capoturno.id,
+    };
+    if (capoturno.id) {
+      return this.http
+        .put<{ data: CapoturnoConfig }>(`${API_BASE_URL}/admin/capoturni/${capoturno.id}`, payload, { headers })
+        .pipe(map((response) => response.data));
+    }
+    return this.http
+      .post<{ data: CapoturnoConfig }>(`${API_BASE_URL}/admin/capoturni`, payload, { headers })
+      .pipe(map((response) => response.data));
+  }
+
+  deleteCapoturno(password: string, capoturnoId: string): Observable<CapoturnoConfig[]> {
+    return this.http
+      .delete<{ data: CapoturnoConfig[] }>(`${API_BASE_URL}/admin/capoturni/${capoturnoId}`, {
         headers: this.buildHeaders(password),
       })
       .pipe(map((response) => response.data));
