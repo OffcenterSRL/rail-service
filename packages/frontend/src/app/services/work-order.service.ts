@@ -27,6 +27,7 @@ export interface WorkOrder {
   status: 'pending' | 'active' | 'completed' | 'cancelled';
   tasks: Task[];
   createdAt?: Date;
+  openedAt?: Date;
   assignedTechnician?: string;
 }
 
@@ -37,7 +38,7 @@ export class WorkOrderService {
   private workOrders$ = new BehaviorSubject<WorkOrder[]>([]);
   private selectedWorkOrder$ = new BehaviorSubject<WorkOrder | null>(null);
   private tasksCache: Record<string, Task[]> = {};
-  private orderMeta: Record<string, { assignedTechnician?: string; odlNumber?: string }> = {};
+  private orderMeta: Record<string, { assignedTechnician?: string; odlNumber?: string; openedAt?: string }> = {};
   private readonly tasksStorageKey = 'rail-work-order-tasks';
   private readonly metaStorageKey = 'rail-work-order-meta';
   private readonly deferredStorageKey = 'rail-work-order-deferred';
@@ -67,14 +68,16 @@ export class WorkOrderService {
     shift: string,
     assignedTechnician?: string,
     odlNumber?: string,
+    openedAt?: Date,
   ): Observable<WorkOrder> {
     const payload = this.buildPayloadForShift(trainNumber, shift);
     return this.ticketService.bookTicket(payload).pipe(
       map((ticket) => {
-        if (assignedTechnician || odlNumber) {
+        if (assignedTechnician || odlNumber || openedAt) {
           this.orderMeta[ticket._id] = {
             assignedTechnician,
             odlNumber,
+            openedAt: openedAt?.toISOString(),
           };
           this.persistOrderMetaCache();
         }
@@ -172,7 +175,7 @@ export class WorkOrderService {
 
   private mapTicketToWorkOrder(
     ticket: TicketRecord,
-    meta?: { assignedTechnician?: string; odlNumber?: string },
+    meta?: { assignedTechnician?: string; odlNumber?: string; openedAt?: string },
   ): WorkOrder {
     let tasks = this.tasksCache[ticket._id] ?? [];
     const deferredToAdd = this.buildDeferredTasksForOrder(ticket.trainId, tasks);
@@ -190,6 +193,7 @@ export class WorkOrderService {
       status: this.ticketStatusToWorkOrderStatus(ticket.status),
       tasks,
       createdAt: new Date(ticket.bookingDate),
+      openedAt: meta?.openedAt ? new Date(meta.openedAt) : undefined,
       assignedTechnician: meta?.assignedTechnician,
     };
   }

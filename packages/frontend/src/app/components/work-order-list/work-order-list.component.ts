@@ -13,39 +13,49 @@ import { Technician, TechnicianService } from '../../services/technician.service
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="work-order-list-container">
-      <ng-container *ngIf="filteredWorkOrders$ | async as workOrders">
-        <div class="list-header">
-          <div>
-            <h3 class="header-title">Seleziona treno</h3>
-          </div>
+    <!-- Modal inserimento ODL -->
+    <div class="modal-backdrop" *ngIf="showModal" (click)="closeModal()">
+      <div class="modal-box" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <span class="modal-title">Inserisci ODL</span>
+          <button class="modal-close" (click)="closeModal()">✕</button>
         </div>
-
-
-        <div class="new-order-section">
-          <div class="train-number-fields">
-            <select [(ngModel)]="trainPrefix" class="select-field">
-              <option *ngFor="let option of trainPrefixOptions" [value]="option">
-                {{ option }}
-              </option>
-            </select>
-            <select [(ngModel)]="trainCode" class="select-field">
-              <option *ngFor="let option of trainNumberOptions" [value]="option">
-                {{ option }}
-              </option>
-            </select>
-          </div>
+        <div class="modal-body">
+          <label class="field-label">Tipo treno</label>
+          <select [(ngModel)]="trainPrefix" class="select-field">
+            <option *ngFor="let option of trainPrefixOptions" [value]="option">{{ option }}</option>
+          </select>
+          <label class="field-label">Numero unità</label>
+          <select [(ngModel)]="trainCode" class="select-field">
+            <option *ngFor="let option of trainNumberOptions" [value]="option">{{ option }}</option>
+          </select>
+          <label class="field-label">Numero ODL</label>
           <input
             type="text"
             inputmode="numeric"
-            maxlength="10"
-            placeholder="Numero ODL (10 cifre)"
+            maxlength="12"
+            placeholder="12 cifre"
             [(ngModel)]="odlNumber"
             class="input-field"
           />
-          <button (click)="createOrder()" class="btn-create" [disabled]="creatingOrder">
-            {{ creatingOrder ? 'Creazione...' : 'Nuovo +' }}
+          <label class="field-label">Data apertura ODL</label>
+          <input type="date" [(ngModel)]="openedAtDate" class="input-field" />
+          <label class="field-label">Ora apertura ODL</label>
+          <input type="time" [(ngModel)]="openedAtTime" class="input-field" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn-cancel" (click)="closeModal()">Annulla</button>
+          <button class="btn-create" (click)="createOrder()" [disabled]="creatingOrder">
+            {{ creatingOrder ? 'Creazione...' : 'Crea ODL' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="work-order-list-container">
+      <ng-container *ngIf="filteredWorkOrders$ | async as workOrders">
+        <div class="list-header">
+          <button class="btn-inserisci" (click)="openModal()">Inserisci ODL</button>
         </div>
 
         <div class="header-controls">
@@ -81,9 +91,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
             </div>
             <div class="order-info">
               <div>{{ order.codiceODL }}</div>
-              <div class="order-created">
-                Creato {{ order.createdAt | date: 'dd/MM/yyyy HH:mm' }}
-              </div>
             </div>
             <div class="order-footer">
               <div class="order-meta">
@@ -177,17 +184,91 @@ import { Technician, TechnicianService } from '../../services/technician.service
         height: 16px;
       }
 
-      .new-order-section {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-        padding: 16px 0;
+      .btn-inserisci {
+        width: 100%;
+        background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
+        color: #0b0b0b;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        box-shadow: 0 8px 16px rgba(255, 124, 45, 0.3);
+        transition: transform 0.2s ease;
       }
 
-      .train-number-fields {
+      .btn-inserisci:hover {
+        transform: translateY(-1px);
+      }
+
+      /* Modal */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .modal-box {
+        background: #131a27;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 18px;
+        width: 100%;
+        max-width: 400px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 0;
+        overflow: hidden;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .modal-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+      }
+
+      .modal-close {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 16px;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 6px;
+        transition: color 0.15s;
+      }
+
+      .modal-close:hover {
+        color: var(--text-primary);
+      }
+
+      .modal-body {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 20px 24px;
+      }
+
+      .field-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-secondary);
+        margin-bottom: 2px;
       }
 
       .input-field {
@@ -203,25 +284,56 @@ import { Technician, TechnicianService } from '../../services/technician.service
       .select-field {
         width: 100%;
         font-size: 13px;
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(20, 28, 41, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
         border-radius: 10px;
         padding: 10px 12px;
       }
 
-      .btn-create {
-        align-self: flex-end;
-        background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
-        color: #0b0b0b;
+      .modal-footer {
+        display: flex;
+        gap: 10px;
+        padding: 16px 24px 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        justify-content: flex-end;
+      }
+
+      .btn-cancel {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-secondary);
         border: none;
         padding: 10px 18px;
         border-radius: 999px;
+        font-size: 13px;
         font-weight: 600;
-        box-shadow: 0 12px 18px rgba(255, 124, 45, 0.35);
+        transition: background 0.15s;
+      }
+
+      .btn-cancel:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .btn-create {
+        background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
+        color: #0b0b0b;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+        box-shadow: 0 8px 16px rgba(255, 124, 45, 0.35);
         transition: transform 0.2s ease;
       }
 
       .btn-create:hover {
         transform: translateY(-1px);
+      }
+
+      .btn-create:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
       }
 
       .orders-list {
@@ -380,20 +492,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
       }
 
       @media (max-width: 600px) {
-        .new-order-section {
-          padding: 12px 0;
-          grid-template-columns: 1fr;
-        }
-
-        .train-number-fields {
-          flex-direction: row;
-          gap: 8px;
-        }
-
-        .train-number-fields .select-field {
-          flex: 1;
-        }
-
         .order-card {
           padding: 12px 14px;
         }
@@ -429,8 +527,14 @@ import { Technician, TechnicianService } from '../../services/technician.service
           width: 100%;
         }
 
+        .modal-footer {
+          flex-direction: column;
+        }
+
+        .btn-cancel,
         .btn-create {
           width: 100%;
+          text-align: center;
         }
       }
     `,
@@ -449,6 +553,9 @@ export class WorkOrderListComponent implements OnInit {
   );
   capoturnoSession: CapoturnoSession | null = null;
   creatingOrder = false;
+  showModal = false;
+  openedAtDate = '';
+  openedAtTime = '';
   searchTerm = '';
   showCompletedOrders = false;
   private selectedWorkOrder: WorkOrder | null = null;
@@ -481,6 +588,17 @@ export class WorkOrderListComponent implements OnInit {
     });
   }
 
+  openModal(): void {
+    const now = new Date();
+    this.openedAtDate = now.toISOString().slice(0, 10);
+    this.openedAtTime = now.toTimeString().slice(0, 5);
+    this.showModal = true;
+  }
+
+  closeModal(): void {
+    this.showModal = false;
+  }
+
   createOrder(): void {
     const trainNumber = `${this.trainPrefix}-${this.trainCode}`;
     const shift = this.capoturnoSession?.shift ?? '';
@@ -488,18 +606,24 @@ export class WorkOrderListComponent implements OnInit {
     if (!this.trainPrefix.trim() || !this.trainCode.trim() || !shift.trim()) {
       return;
     }
-    if (!/^\d{10}$/.test(odlNumber)) {
+    if (!/^\d{12}$/.test(odlNumber)) {
       return;
     }
 
+    let openedAt: Date | undefined;
+    if (this.openedAtDate) {
+      openedAt = new Date(`${this.openedAtDate}T${this.openedAtTime || '00:00'}`);
+    }
+
     this.creatingOrder = true;
-    this.workOrderService.createWorkOrder(trainNumber, shift, undefined, odlNumber).subscribe({
+    this.workOrderService.createWorkOrder(trainNumber, shift, undefined, odlNumber, openedAt).subscribe({
       next: () => {
         this.trainPrefix = this.trainPrefixOptions[0];
         this.trainCode = this.trainNumberOptions[0];
         this.odlNumber = '';
         this.workOrderService.saveWorkOrders();
         this.creatingOrder = false;
+        this.showModal = false;
       },
       error: () => {
         this.creatingOrder = false;
@@ -530,7 +654,7 @@ export class WorkOrderListComponent implements OnInit {
     if (!total) {
       return 0;
     }
-    const resolved = order.tasks.filter((task) => task.status === 'risolte').length;
+    const resolved = order.tasks.filter((task) => task.status === 'risolte' || task.status === 'rimandato').length;
     return Math.round((resolved / total) * 100);
   }
 

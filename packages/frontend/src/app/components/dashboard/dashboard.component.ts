@@ -62,10 +62,13 @@ type MaterialsRequestStep = 'select' | 'details';
       <ng-container *ngIf="selectedOrder">
         <div class="selected-order-card">
           <div class="selected-order-top">
-            <div>
-              <h1 class="train-number">Treno {{ selectedOrder.trainNumber }}</h1>
+            <div class="order-top-left">
+              <div class="order-top-title-row">
+                <h1 class="train-number">Treno {{ selectedOrder.trainNumber }}</h1>
+                <span class="status-pill" [ngClass]="selectedOrder.status">{{ selectedOrder.status | titlecase }}</span>
+              </div>
               <p class="work-order-info">
-                {{ selectedOrder.codiceODL }} · Turno: {{ selectedOrder.shift }}
+                {{ selectedOrder.codiceODL }} · ODL Aperto il {{ (selectedOrder.openedAt || selectedOrder.createdAt) | date: 'dd/MM/yyyy HH:mm' }}
               </p>
             </div>
             <div class="header-actions">
@@ -77,20 +80,6 @@ type MaterialsRequestStep = 'select' | 'details';
               >
                 {{ orderCancellationInProgress ? 'Annullamento...' : 'Annulla ODL' }}
               </button>
-            </div>
-          </div>
-          <div class="order-meta-grid">
-            <div class="meta-item">
-              <span class="meta-label">Stato</span>
-              <span class="status-pill" [ngClass]="selectedOrder.status">{{ selectedOrder.status | titlecase }}</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Creato il</span>
-              <span class="meta-value">{{ selectedOrder.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Codice ODL</span>
-              <span class="meta-value">{{ selectedOrder.codiceODL }}</span>
             </div>
           </div>
           <div class="order-progress">
@@ -649,67 +638,58 @@ type MaterialsRequestStep = 'select' | 'details';
 
       .selected-order-card {
         background: linear-gradient(180deg, rgba(12, 15, 30, 0.95), rgba(20, 26, 46, 0.95));
-        border-radius: 26px;
+        border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 24px;
-        box-shadow: 0 25px 45px rgba(1, 7, 20, 0.75);
+        padding: 16px 20px;
+        box-shadow: 0 20px 40px rgba(1, 7, 20, 0.75);
         display: flex;
         flex-direction: column;
-        gap: 18px;
+        gap: 12px;
       }
 
       .selected-order-top {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
-        gap: 18px;
+        align-items: center;
+        gap: 16px;
       }
 
-      .train-number {
-        font-size: 30px;
-        font-weight: 700;
-        margin: 0 0 6px 0;
-      }
-
-      .work-order-info {
-        font-size: 13px;
-        color: var(--text-secondary);
-        margin: 0;
-      }
-
-      .order-meta-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 12px;
-      }
-
-      .meta-item {
+      .order-top-left {
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
       }
 
-      .meta-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
+      .order-top-title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .train-number {
+        font-size: 22px;
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .work-order-info {
+        font-size: 12px;
         color: var(--text-secondary);
-      }
-
-      .meta-value {
-        font-size: 15px;
-        font-weight: 600;
+        margin: 0;
       }
 
       .status-pill {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 4px 10px;
+        padding: 3px 10px;
         border-radius: 999px;
-        font-size: 11px;
+        font-size: 10px;
         letter-spacing: 0.8px;
         text-transform: uppercase;
+        font-weight: 600;
         background: rgba(255, 255, 255, 0.08);
       }
 
@@ -1446,16 +1426,16 @@ type MaterialsRequestStep = 'select' | 'details';
 
       @media (max-width: 600px) {
         .selected-order-card {
-          padding: 16px;
-          border-radius: 18px;
+          padding: 14px 16px;
+          border-radius: 16px;
+        }
+
+        .selected-order-top {
+          align-items: flex-start;
         }
 
         .train-number {
-          font-size: 22px;
-        }
-
-        .order-meta-grid {
-          grid-template-columns: 1fr;
+          font-size: 19px;
         }
 
         .header-actions {
@@ -1529,12 +1509,12 @@ type MaterialsRequestStep = 'select' | 'details';
 
       @media (max-width: 420px) {
         .selected-order-card {
-          padding: 12px;
+          padding: 12px 14px;
           border-radius: 14px;
         }
 
         .train-number {
-          font-size: 19px;
+          font-size: 17px;
         }
 
         .task-item {
@@ -1989,7 +1969,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (!total) {
       return 0;
     }
-    const resolved = this.getTasksByStatus('risolte');
+    const resolved = this.getTasksByStatus('risolte') + this.getTasksByStatus('rimandato');
     return Math.round((resolved / total) * 100);
   }
 

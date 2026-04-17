@@ -45,7 +45,6 @@ type AssignedTask = {
             <span class="logo-text">HMU SERVICE</span>
           </div>
           <div class="header-right">
-            <div class="status-pill">3 ordini attivi</div>
             <div class="view-toggle">
               <button
                 class="view-btn"
