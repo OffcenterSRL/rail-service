@@ -385,13 +385,23 @@ import { Technician, TechnicianService } from '../../services/technician.service
           grid-template-columns: 1fr;
         }
 
+        .train-number-fields {
+          flex-direction: row;
+          gap: 8px;
+        }
+
+        .train-number-fields .select-field {
+          flex: 1;
+        }
+
         .order-card {
           padding: 12px 14px;
         }
 
         .order-title-row {
-          flex-direction: column;
-          align-items: flex-start;
+          flex-direction: row;
+          align-items: center;
+          flex-wrap: wrap;
           gap: 6px;
         }
 
@@ -534,30 +544,44 @@ export class WorkOrderListComponent implements OnInit {
     this.showCompleted$.next(show);
   }
 
+  private sortTrainNumber(a: string, b: string): number {
+    const parse = (s: string) => {
+      const m = s.match(/^([A-Za-z]+)(\d+)[-_]?(\d*)$/);
+      if (!m) return { series: 0, unit: 0 };
+      return { series: parseInt(m[2], 10), unit: parseInt(m[3] || '0', 10) };
+    };
+    const pa = parse(a);
+    const pb = parse(b);
+    if (pa.series !== pb.series) return pa.series - pb.series;
+    return pa.unit - pb.unit;
+  }
+
   private filterOrders(
     orders: WorkOrder[],
     searchValue: string,
     showCompleted: boolean,
   ): WorkOrder[] {
     const normalized = searchValue.trim().toLowerCase();
-    return orders.filter((order) => {
-      const matchesSearch =
-        !normalized ||
-        order.trainNumber.toLowerCase().includes(normalized) ||
-        order.codiceODL.toLowerCase().includes(normalized) ||
-        order.shift.toLowerCase().includes(normalized);
-      if (!matchesSearch) {
-        return false;
-      }
-      const isHidden = order.status === 'completed' || order.status === 'cancelled';
-      if (showCompleted) {
-        return true;
-      }
-      if (normalized) {
-        return true;
-      }
-      return !isHidden;
-    });
+    return orders
+      .filter((order) => {
+        const matchesSearch =
+          !normalized ||
+          order.trainNumber.toLowerCase().includes(normalized) ||
+          order.codiceODL.toLowerCase().includes(normalized) ||
+          order.shift.toLowerCase().includes(normalized);
+        if (!matchesSearch) {
+          return false;
+        }
+        const isHidden = order.status === 'completed' || order.status === 'cancelled';
+        if (showCompleted) {
+          return true;
+        }
+        if (normalized) {
+          return true;
+        }
+        return !isHidden;
+      })
+      .sort((a, b) => this.sortTrainNumber(a.trainNumber, b.trainNumber));
   }
 
   // Intentionally no local shift selection: uses capoturno session.

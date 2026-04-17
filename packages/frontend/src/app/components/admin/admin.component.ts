@@ -340,6 +340,58 @@ import { AdminConfigService, CapoturnoConfig, TechnicianConfig } from '../../ser
         border: 1px solid rgba(255, 255, 255, 0.08);
         color: var(--text-primary);
       }
+
+      @media (max-width: 768px) {
+        .admin-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+          padding: 16px 18px;
+        }
+
+        .admin-page {
+          padding: 14px;
+          gap: 16px;
+        }
+      }
+
+      @media (max-width: 600px) {
+        .admin-page {
+          padding: 10px;
+        }
+
+        .admin-header {
+          padding: 14px;
+          border-radius: 16px;
+        }
+
+        .admin-form {
+          padding: 14px;
+          border-radius: 16px;
+        }
+
+        .password-row {
+          flex-direction: column;
+        }
+
+        .password-row .btn {
+          width: 100%;
+        }
+
+        .technicians-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .config-form-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .config-form-actions .btn {
+          width: 100%;
+          text-align: center;
+        }
+      }
     `,
   ],
 })

@@ -1506,6 +1506,40 @@ type MaterialsRequestStep = 'select' | 'details';
           flex-direction: column;
           align-items: flex-start;
         }
+
+        .task-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 6px;
+        }
+
+        .task-status {
+          align-self: flex-start;
+        }
+
+        .selected-order-top {
+          gap: 10px;
+        }
+
+        .btn-add-task {
+          width: 100%;
+          text-align: center;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .selected-order-card {
+          padding: 12px;
+          border-radius: 14px;
+        }
+
+        .train-number {
+          font-size: 19px;
+        }
+
+        .task-item {
+          padding: 10px 12px;
+        }
       }
     `,
   ],

@@ -354,6 +354,7 @@ type AssignedTask = {
         padding: 20px 0;
         width: 100%;
         box-sizing: border-box;
+        overflow-x: hidden;
       }
 
       .header {
@@ -943,6 +944,8 @@ type AssignedTask = {
 
         .sidebar {
           width: 100%;
+          max-height: 55vh;
+          overflow-y: auto;
         }
       }
 
@@ -989,23 +992,54 @@ type AssignedTask = {
         .main-content {
           padding: 20px;
         }
+
+        .panel-shell {
+          padding: 24px 18px;
+        }
+
+        .tecnico-panel {
+          padding: 0;
+        }
       }
 
       @media (max-width: 600px) {
         .header-content {
           flex-direction: column;
           align-items: flex-start;
-          gap: 12px;
+          gap: 10px;
         }
 
-        .status-pill {
+        .header-right {
+          width: 100%;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .header .status-pill {
+          display: none;
+        }
+
+        .view-toggle {
+          flex: 1;
+        }
+
+        .view-btn {
+          flex: 1;
+          padding: 6px 6px;
           font-size: 11px;
-          padding: 4px 10px;
+        }
+
+        .logout-btn {
+          margin-left: auto;
         }
 
         .hero-strip {
           flex-direction: column;
           min-height: auto;
+        }
+
+        .hero-copy h1 {
+          font-size: 19px;
         }
 
         .hero-metrics {
@@ -1018,12 +1052,8 @@ type AssignedTask = {
           min-width: 0;
         }
 
-        .main-content {
-          padding: 16px;
-        }
-
-        .login-card {
-          padding: 20px;
+        .metric-value {
+          font-size: 20px;
         }
 
         .main-layout {
@@ -1031,17 +1061,85 @@ type AssignedTask = {
         }
 
         .sidebar {
-          padding: 12px 0;
+          padding: 10px 0;
           border-radius: 16px;
         }
 
         .main-content {
           border-radius: 16px;
-          padding: 12px;
+          padding: 14px;
+        }
+
+        .panel-shell {
+          padding: 16px 14px;
+          gap: 14px;
+          border-radius: 20px;
+        }
+
+        .panel-shell .btn {
+          width: 100%;
+          text-align: center;
+        }
+
+        .panel-heading h2 {
+          font-size: 22px;
+        }
+
+        .tecnico-panel {
+          padding: 0;
+          min-height: auto;
+        }
+
+        .compile-tech-row {
+          grid-template-columns: 1fr;
+        }
+
+        .task-compile-card {
+          padding: 14px;
+        }
+
+        .login-card {
+          padding: 20px;
         }
 
         .app-footer {
           text-align: center;
+        }
+      }
+
+      @media (max-width: 420px) {
+        body {
+          padding: 0 6px;
+        }
+
+        .header {
+          padding: 10px 14px;
+          border-radius: 14px;
+        }
+
+        .logo {
+          font-size: 17px;
+        }
+
+        .logo-icon {
+          font-size: 22px;
+        }
+
+        .hero-copy h1 {
+          font-size: 17px;
+        }
+
+        .hero-strip {
+          padding: 14px;
+          border-radius: 16px;
+        }
+
+        .metric-value {
+          font-size: 18px;
+        }
+
+        .sidebar-content {
+          padding: 10px 14px;
         }
       }
     `,
@@ -1288,15 +1386,45 @@ export class AppComponent implements OnInit, OnDestroy {
     );
   }
 
+  private getTaskStatusStyle(status: Task['status']): string {
+    if (status === 'in_progress') return 'background-color:#FFF8CC;color:#997700;';
+    if (status === 'risolte') return 'background-color:#D4F7E0;color:#166534;';
+    if (status === 'rimandato') return 'background-color:#FFD5D5;color:#991B1B;';
+    return 'background-color:#FFE0C8;color:#92400E;';
+  }
+
+  private sortTrainNumber(a: string, b: string): number {
+    const parse = (s: string) => {
+      const m = s.match(/^([A-Za-z]+)(\d+)[-_]?(\d*)$/);
+      if (!m) return { series: 0, unit: 0 };
+      return { series: parseInt(m[2], 10), unit: parseInt(m[3] || '0', 10) };
+    };
+    const pa = parse(a);
+    const pb = parse(b);
+    if (pa.series !== pb.series) return pa.series - pb.series;
+    return pa.unit - pb.unit;
+  }
+
   exportCapoturnoShift(): void {
     if (!this.capoturnoSession) {
       return;
     }
     const shift = this.capoturnoShift;
-    const orders = this.allWorkOrders.filter((order) => order.shift === shift);
+    const orders = this.allWorkOrders
+      .filter((order) => order.shift === shift)
+      .sort((a, b) => this.sortTrainNumber(a.trainNumber, b.trainNumber));
+
+    const separator = `
+      <tr><td colspan="10" style="border:none;padding:4px;"></td></tr>
+      <tr><td colspan="10" style="border:none;padding:4px;"></td></tr>
+    `;
+    let lastTrainNumber: string | null = null;
     const rows = orders.flatMap((order) => {
+      const sep = lastTrainNumber !== null && lastTrainNumber !== order.trainNumber ? separator : '';
+      lastTrainNumber = order.trainNumber;
       if (!order.tasks.length) {
         return [
+          sep +
           `
           <tr>
             <td>${this.escapeHtml(order.trainNumber)}</td>
@@ -1309,14 +1437,13 @@ export class AppComponent implements OnInit, OnDestroy {
             <td></td>
             <td></td>
             <td></td>
-            <td></td>
-            <td></td>
           </tr>
           `,
         ];
       }
       return order.tasks.map(
         (task, index) => `
+          ${index === 0 ? sep : ''}
           <tr>
             <td>${this.escapeHtml(order.trainNumber)}</td>
             <td>${this.escapeHtml(order.codiceODL)}</td>
@@ -1326,10 +1453,8 @@ export class AppComponent implements OnInit, OnDestroy {
             <td>${index + 1}</td>
             <td>${this.escapeHtml(task.description)}</td>
             <td>${this.escapeHtml(this.formatPriority(task.priority))}</td>
-            <td>${this.escapeHtml(this.formatStatus(task.status))}</td>
+            <td style="${this.getTaskStatusStyle(task.status)}">${this.escapeHtml(this.formatStatus(task.status))}</td>
             <td>${this.escapeHtml(task.assignedTechnicianName)}</td>
-            <td>${this.escapeHtml(task.assignedTechnicianNickname)}</td>
-            <td>${this.escapeHtml(task.assignedTechnicianId ?? '')}</td>
           </tr>
         `,
       );
@@ -1368,12 +1493,10 @@ export class AppComponent implements OnInit, OnDestroy {
                 <th>Priorità</th>
                 <th>Stato Task</th>
                 <th>Tecnico</th>
-                <th>Nickname</th>
-                <th>ID Tecnico</th>
               </tr>
             </thead>
             <tbody>
-              ${rows.length ? rows.join('') : '<tr><td colspan="12">Nessun ordine nel turno selezionato</td></tr>'}
+              ${rows.length ? rows.join('') : '<tr><td colspan="10">Nessun ordine nel turno selezionato</td></tr>'}
             </tbody>
           </table>
         </body>
