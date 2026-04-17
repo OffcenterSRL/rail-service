@@ -3,14 +3,47 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { Observable, Subscription } from 'rxjs';
-import { CapoturnoSession } from '../../services/auth.service';
+import { AuthService, CapoturnoSession } from '../../services/auth.service';
 import { CapoturnoSessionService } from '../../services/capoturno-session.service';
+import {
+  MaterialRequestExportService,
+  MaterialRequestLineFields,
+  MaterialRequestSharedFields,
+} from '../../services/material-request-export.service';
 import { TechnicianService, Technician } from '../../services/technician.service';
 import {
   Task,
   WorkOrder,
   WorkOrderService,
 } from '../../services/work-order.service';
+
+interface MaterialItem {
+  tavola: string;
+  codice_fs: string;
+  descrizione: string;
+  riferimento: string;
+  codice_fornitore: string;
+  codice_ditta_documento: string;
+  numero_documento: string;
+  segno_matr_pos: string;
+  numero_pezzi: string;
+  unita_conto: string;
+  note: string;
+  source_pdf: string;
+  source_page: string;
+}
+
+interface MaterialRequestLineDraft {
+  item: MaterialItem;
+  key: string;
+  avviso: string;
+  guasto: string;
+  quantity: string;
+  tipoIntervento: string;
+  um: string;
+}
+
+type MaterialsRequestStep = 'select' | 'details';
 
 @Component({
   selector: 'app-dashboard',
@@ -36,14 +69,13 @@ import {
               </p>
             </div>
             <div class="header-actions">
-              <button class="btn btn-secondary" type="button">📋 Copia codice tecnico</button>
               <button
-                class="btn btn-danger"
+                class="btn btn-danger btn-add-compact"
                 type="button"
                 (click)="cancelWorkOrder()"
                 [disabled]="!canCancelOrder() || orderCancellationInProgress"
               >
-                {{ orderCancellationInProgress ? 'Annullamento...' : '🗑️ Annulla ODL' }}
+                {{ orderCancellationInProgress ? 'Annullamento...' : 'Annulla ODL' }}
               </button>
             </div>
           </div>
@@ -70,92 +102,397 @@ import {
               <span class="progress-bar" [style.width.%]="getCompletionRate()"></span>
             </div>
           </div>
-        </div>
 
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-badge totale"></div>
-            <div class="stat-content">
-              <span class="stat-label">TOTALE</span>
-              <span class="stat-value">{{ selectedOrder.tasks.length }}</span>
+          <div class="stats-row">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-badge totale"></div>
+                <div class="stat-content">
+                  <span class="stat-label">TOTALE</span>
+                  <span class="stat-value">{{ selectedOrder.tasks.length }}</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-badge risolte"></div>
+                <div class="stat-content">
+                  <span class="stat-label">RISOLTE</span>
+                  <span class="stat-value">{{ getTasksByStatus('risolte') }}</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-badge in-corso"></div>
+                <div class="stat-content">
+                  <span class="stat-label">IN CORSO</span>
+                  <span class="stat-value">{{ getTasksByStatus('in_progress') }}</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-badge rimandate"></div>
+                <div class="stat-content">
+                  <span class="stat-label">RIMANDATE</span>
+                  <span class="stat-value">{{ getTasksByStatus('rimandato') }}</span>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-badge risolte"></div>
-            <div class="stat-content">
-              <span class="stat-label">RISOLTE</span>
-              <span class="stat-value">{{ getTasksByStatus('risolte') }}</span>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-badge parziali"></div>
-            <div class="stat-content">
-              <span class="stat-label">PARZIALI</span>
-              <span class="stat-value">{{ getTasksByStatus('parziali') }}</span>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-badge attesa"></div>
-            <div class="stat-content">
-              <span class="stat-label">IN ATTESA</span>
-              <span class="stat-value">{{ getTasksByStatus('aperta') }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- New Task Form -->
-        <div class="section new-task-panel">
-          <div class="section-header">
-            <div>
-              <span class="section-label">Nuova lavorazione</span>
-              <p class="section-subtitle">
-                Inserisci il dettaglio e assegna un tecnico prima di confermare.
-              </p>
-            </div>
-            <div class="status-indicator">
-              <span class="status-dot"></span>
-              In attesa di compilazione
-            </div>
-          </div>
-          <form [formGroup]="newTaskForm" (ngSubmit)="onAddTask()" class="task-form">
-        <div class="form-grid">
-              <label class="field-group">
-                <span class="field-label">Descrizione attività</span>
-                <input
-                  type="text"
-                  placeholder="Esempio: Verifica impianto frenante"
-                  formControlName="description"
-                  class="task-input"
-                />
-              </label>
-              <label class="field-group">
-                <span class="field-label">Priorità</span>
-                <select formControlName="priority" class="task-input">
-                  <option value="preventiva">Preventiva</option>
-                  <option value="correttiva">Correttiva</option>
-                  <option value="urgente">Urgente</option>
-                </select>
-              </label>
-              <label class="field-group">
-                <span class="field-label">Tecnico assegnato</span>
-                <select formControlName="assignedTechnicianId" class="task-input">
-                  <option value="" disabled>Seleziona un tecnico</option>
-                  <option *ngFor="let tech of technicians$ | async" [value]="tech.id">
-                    {{ tech.name }} · {{ tech.team }}
-                  </option>
-                </select>
-              </label>
-            </div>
-            <div class="form-actions">
-              <span class="helper-text">
-                Gli ordini vengono salvati localmente finché non premi «Aggiungi».
-              </span>
-              <button type="submit" class="btn btn-add" [disabled]="newTaskForm.invalid">
+            <div class="stats-actions">
+              <button
+                class="btn btn-secondary btn-add-compact"
+                type="button"
+                (click)="openMaterialsRequestModal()"
+              >
+                Richiesta materiali
+              </button>
+              <button class="btn btn-add btn-add-compact" type="button" (click)="openNewTaskModal()">
                 Aggiungi lavorazione
               </button>
             </div>
-          </form>
+          </div>
+        </div>
+
+        <div *ngIf="isNewTaskModalOpen" class="modal-backdrop" (click)="closeNewTaskModal()">
+          <div class="modal-card" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <div>
+                <span class="section-label">Nuova lavorazione</span>
+                <p class="section-subtitle">
+                  Inserisci il dettaglio e assegna un tecnico prima di confermare.
+                </p>
+              </div>
+              <div class="modal-actions">
+                <div class="status-indicator">
+                  <span class="status-dot"></span>
+                  In attesa di compilazione
+                </div>
+                <button class="btn btn-secondary btn-close" type="button" (click)="closeNewTaskModal()">
+                  Chiudi
+                </button>
+              </div>
+            </div>
+            <form [formGroup]="newTaskForm" (ngSubmit)="onAddTask()" class="task-form">
+              <div class="form-grid">
+                <label class="field-group">
+                  <span class="field-label">Descrizione attività</span>
+                  <input
+                    type="text"
+                    placeholder="Esempio: Verifica impianto frenante"
+                    formControlName="description"
+                    class="task-input"
+                  />
+                </label>
+                <label class="field-group">
+                  <span class="field-label">Priorità</span>
+                  <select formControlName="priority" class="task-input">
+                    <option value="preventiva">Preventiva</option>
+                    <option value="correttiva">Correttiva</option>
+                    <option value="urgente">Urgente</option>
+                  </select>
+                </label>
+                <label
+                  class="field-group"
+                  *ngIf="newTaskForm.value.priority === 'preventiva'"
+                >
+                  <span class="field-label">Tipo preventiva</span>
+                  <select formControlName="preventiveType" class="task-input">
+                    <option value="" disabled>Seleziona preventiva</option>
+                    <option *ngFor="let option of preventiveOptions" [value]="option.label">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field-group">
+                  <span class="field-label">Tecnico assegnato</span>
+                  <select formControlName="assignedTechnicianId" class="task-input">
+                    <option value="" disabled>Seleziona un tecnico</option>
+                    <option *ngFor="let tech of technicians$ | async" [value]="tech.id">
+                      {{ tech.name }} · {{ tech.team }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-actions">
+                <span class="helper-text">
+                  Gli ordini vengono salvati localmente finché non premi «Aggiungi».
+                </span>
+                <button type="submit" class="btn btn-add" [disabled]="newTaskForm.invalid">
+                  Aggiungi lavorazione
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div
+          *ngIf="isMaterialsRequestModalOpen"
+          class="modal-backdrop"
+          (click)="closeMaterialsRequestModal()"
+        >
+          <div class="modal-card" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <div>
+                <span class="section-label">Richiesta materiali</span>
+                <p class="section-subtitle">
+                  {{
+                    materialsRequestStep === 'select'
+                      ? 'Seleziona l’intervento e i materiali da inserire nella richiesta.'
+                      : 'Completa i campi obbligatori e genera il file Excel già compilato.'
+                  }}
+                </p>
+              </div>
+              <div class="modal-actions">
+                <div *ngIf="materialsRequestExportError" class="helper-text materials-request-error">
+                  {{ materialsRequestExportError }}
+                </div>
+                <button
+                  class="btn btn-secondary btn-close"
+                  type="button"
+                  (click)="closeMaterialsRequestModal()"
+                  [disabled]="materialsRequestExportInProgress"
+                >
+                  Chiudi
+                </button>
+              </div>
+            </div>
+            <div class="task-form">
+              <ng-container *ngIf="materialsRequestStep === 'select'; else materialsRequestDetailsStep">
+                <label class="field-group">
+                  <span class="field-label">Intervento</span>
+                  <select
+                    class="task-input"
+                    [(ngModel)]="materialsRequestTaskId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="" disabled>Seleziona lavorazione</option>
+                    <option *ngFor="let task of selectedOrder?.tasks" [value]="task.id">
+                      {{ task.description }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field-group materials-search">
+                  <span class="field-label">Cerca materiale</span>
+                  <input
+                    type="text"
+                    class="task-input"
+                    placeholder="Descrizione o codice articolo"
+                    [(ngModel)]="materialsSearchQuery"
+                    [ngModelOptions]="{ standalone: true }"
+                    (input)="onMaterialsSearchChange()"
+                  />
+                </label>
+                <div class="materials-results">
+                  <div *ngIf="materialsLoading" class="helper-text">Caricamento elenco...</div>
+                  <div *ngIf="materialsError" class="helper-text">{{ materialsError }}</div>
+                  <div *ngIf="!materialsLoading && !materialsError">
+                    <div *ngIf="selectedMaterials.length" class="materials-selected">
+                      <div class="materials-selected-title">
+                        Selezionati ({{ selectedMaterials.length }})
+                      </div>
+                      <div class="materials-selected-list">
+                        <div
+                          *ngFor="let item of selectedMaterials"
+                          class="materials-selected-row"
+                        >
+                          <div class="materials-desc">{{ item.descrizione }}</div>
+                          <div class="materials-code">{{ item.numero_documento || '-' }}</div>
+                          <div class="materials-meta">{{ item.numero_pezzi || '-' }}</div>
+                          <div class="materials-file">
+                            <a
+                              *ngIf="item.source_pdf"
+                              [attr.href]="getMaterialFileUrl(item)"
+                              target="_blank"
+                              rel="noopener"
+                            >
+                              Apri
+                            </a>
+                            <span *ngIf="!item.source_pdf">-</span>
+                          </div>
+                          <button
+                            class="btn btn-secondary btn-remove"
+                            type="button"
+                            (click)="removeSelectedMaterial(item)"
+                          >
+                            Rimuovi
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="materials-header">
+                      <span>Descrizione</span>
+                      <span>Numero</span>
+                      <span>Pezzi</span>
+                      <span>File</span>
+                    </div>
+                    <div
+                      *ngFor="let item of materialsResults"
+                      class="materials-row"
+                      [class.selected]="isMaterialSelected(item)"
+                      (click)="toggleMaterialSelection(item)"
+                    >
+                      <div class="materials-desc">{{ item.descrizione }}</div>
+                      <div class="materials-code">{{ item.numero_documento || '-' }}</div>
+                      <div class="materials-meta">{{ item.numero_pezzi || '-' }}</div>
+                      <div class="materials-file">
+                        <a
+                          *ngIf="item.source_pdf"
+                          [attr.href]="getMaterialFileUrl(item)"
+                          target="_blank"
+                          rel="noopener"
+                          (click)="$event.stopPropagation()"
+                        >
+                          Apri
+                        </a>
+                        <span *ngIf="!item.source_pdf">-</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-actions materials-actions">
+                  <span class="helper-text">
+                    Seleziona una lavorazione e almeno un materiale per continuare.
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-add"
+                    (click)="proceedToMaterialsRequestDetails()"
+                    [disabled]="!canProceedToMaterialsRequestDetails()"
+                  >
+                    Avanti
+                  </button>
+                </div>
+              </ng-container>
+
+              <ng-template #materialsRequestDetailsStep>
+                <div class="materials-request-summary">
+                  <div class="materials-request-summary-card">
+                    <span class="materials-request-summary-label">Intervento</span>
+                    <strong>{{ getSelectedMaterialsTaskDescription() }}</strong>
+                  </div>
+                  <div class="materials-request-summary-card">
+                    <span class="materials-request-summary-label">Materiali</span>
+                    <strong>{{ selectedMaterials.length }}</strong>
+                  </div>
+                  <div class="materials-request-summary-card">
+                    <span class="materials-request-summary-label">Treno</span>
+                    <strong>{{ selectedOrder.trainNumber }}</strong>
+                  </div>
+                </div>
+
+                <div class="materials-request-shared-row">
+                  <label class="field-group">
+                    <span class="field-label">Cassa</span>
+                    <input
+                      type="text"
+                      class="task-input"
+                      [(ngModel)]="materialsRequestSharedDraft.cassa"
+                      [ngModelOptions]="{ standalone: true }"
+                    />
+                  </label>
+                  <label class="field-group">
+                    <span class="field-label">Note</span>
+                    <input
+                      type="text"
+                      class="task-input"
+                      placeholder="Opzionale"
+                      [(ngModel)]="materialsRequestSharedDraft.note"
+                      [ngModelOptions]="{ standalone: true }"
+                    />
+                  </label>
+                </div>
+
+                <div class="materials-request-lines">
+                  <div
+                    *ngFor="let line of materialsRequestLineDrafts"
+                    class="materials-request-line"
+                  >
+                    <div class="materials-request-line-info">
+                      <div class="materials-desc">{{ line.item.descrizione }}</div>
+                      <div class="materials-line-detail">
+                        {{ line.item.numero_documento || line.item.codice_ditta_documento || line.item.codice_fs || '-' }}
+                        · Tav. {{ line.item.tavola || '-' }} · Rif. {{ line.item.riferimento || '-' }}
+                      </div>
+                    </div>
+                    <div class="materials-request-line-fields">
+                      <label class="field-group materials-inline-field">
+                        <span class="field-label">Avviso</span>
+                        <input
+                          type="text"
+                          class="task-input"
+                          [(ngModel)]="line.avviso"
+                          [ngModelOptions]="{ standalone: true }"
+                        />
+                      </label>
+                      <label class="field-group materials-inline-field">
+                        <span class="field-label">Tipo di intervento</span>
+                        <select
+                          class="task-input"
+                          [(ngModel)]="line.tipoIntervento"
+                          [ngModelOptions]="{ standalone: true }"
+                        >
+                          <option value="" disabled>Seleziona tipo</option>
+                          <option *ngFor="let option of materialsRequestTypeOptions" [value]="option">
+                            {{ option }}
+                          </option>
+                        </select>
+                      </label>
+                      <label class="field-group materials-inline-field">
+                        <span class="field-label">Guasto</span>
+                        <input
+                          type="text"
+                          class="task-input"
+                          [(ngModel)]="line.guasto"
+                          [ngModelOptions]="{ standalone: true }"
+                        />
+                      </label>
+                      <label class="field-group materials-inline-field">
+                        <span class="field-label">Q.tà</span>
+                        <input
+                          type="text"
+                          class="task-input"
+                          [(ngModel)]="line.quantity"
+                          [ngModelOptions]="{ standalone: true }"
+                        />
+                      </label>
+                      <label class="field-group materials-inline-field">
+                        <span class="field-label">UM</span>
+                        <select
+                          class="task-input"
+                          [(ngModel)]="line.um"
+                          [ngModelOptions]="{ standalone: true }"
+                        >
+                          <option value="" disabled>UM</option>
+                          <option *ngFor="let option of materialsRequestUmOptions" [value]="option">
+                            {{ option }}
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-actions materials-actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    (click)="backToMaterialsRequestSelection()"
+                    [disabled]="materialsRequestExportInProgress"
+                  >
+                    Indietro
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-add"
+                    (click)="exportMaterialsRequest()"
+                    [disabled]="!canExportMaterialsRequest() || materialsRequestExportInProgress"
+                  >
+                    {{
+                      materialsRequestExportInProgress
+                        ? 'Generazione in corso...'
+                        : 'Genera file Excel'
+                    }}
+                  </button>
+                </div>
+              </ng-template>
+            </div>
+          </div>
         </div>
 
         <!-- Tasks List -->
@@ -174,10 +511,30 @@ import {
                 <div class="task-title">{{ task.description }}</div>
                 <div class="task-meta">
                   {{ task.priority | titlecase }} · Assegnata a: {{ task.assignedTechnicianName }}
+                  <span *ngIf="task.preventiveType" class="task-preventive">
+                    · {{ task.preventiveType }}
+                  </span>
+                  <span
+                    *ngIf="task.status === 'rimandato' && task.deferredSince"
+                    class="task-deferred"
+                  >
+                    · Rimandato {{ task.deferredCount ?? 1 }} volte dal
+                    {{ task.deferredSince | date: 'dd/MM/yyyy' }}
+                  </span>
                 </div>
               </div>
               <div class="task-actions">
-                <span class="task-status">{{ task.status }}</span>
+                <span class="task-status" [ngClass]="getTaskStatusClass(task.status)">
+                  {{ getTaskStatusLabel(task.status) }}
+                </span>
+                <button
+                  *ngIf="task.preventiveType"
+                  class="btn btn-secondary"
+                  type="button"
+                  (click)="openPreventiveFile(task.preventiveType)"
+                >
+                  Stampa
+                </button>
                 <button class="btn btn-secondary" type="button" (click)="startEditTask(task)">
                   Modifica
                 </button>
@@ -438,8 +795,8 @@ import {
       }
 
       .btn-danger {
-        background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
-        color: #08040a;
+        background: linear-gradient(180deg, #f87171, #ef4444);
+        color: #0b0505;
       }
 
       .btn-danger:hover {
@@ -447,25 +804,41 @@ import {
       }
 
       .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: nowrap;
+        margin-top: 12px;
+        flex: 1;
+        justify-content: flex-start;
+        max-width: 60%;
+      }
+
+      .stats-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
       }
 
       .stat-card {
         background: rgba(255, 255, 255, 0.02);
-        border-radius: 18px;
-        padding: 20px;
+        border-radius: 12px;
+        padding: 8px 14px;
         border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 20px 35px rgba(1, 6, 16, 0.75);
+        box-shadow: 0 8px 14px rgba(1, 6, 16, 0.45);
         display: flex;
-        gap: 14px;
+        gap: 6px;
         align-items: center;
+        flex: 1;
+        min-width: 120px;
+        max-width: 180px;
+        justify-content: flex-start;
+        min-height: 32px;
       }
 
       .stat-badge {
-        width: 14px;
-        height: 14px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         flex-shrink: 0;
       }
@@ -475,33 +848,53 @@ import {
       }
 
       .stat-badge.risolte {
-        background-color: var(--success);
+        background-color: #22c55e;
+        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
       }
 
-      .stat-badge.parziali {
-        background-color: var(--accent-orange);
+      .stat-badge.in-corso {
+        background-color: #facc15;
       }
 
-      .stat-badge.attesa {
-        background-color: var(--error);
+      .stat-badge.rimandate {
+        background-color: #ef4444;
+        box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
       }
 
       .stat-content {
         display: flex;
-        flex-direction: column;
+        align-items: center;
         gap: 6px;
       }
 
       .stat-label {
-        font-size: 11px;
+        font-size: 9px;
         text-transform: uppercase;
         color: var(--text-secondary);
-        letter-spacing: 1px;
+        letter-spacing: 0.6px;
       }
 
       .stat-value {
-        font-size: 24px;
+        font-size: 12px;
         font-weight: 700;
+      }
+
+      .btn-add-compact {
+        height: 32px;
+        padding: 0 14px;
+        font-size: 12px;
+        white-space: nowrap;
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .stats-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
       }
 
       .work-order-code {
@@ -540,24 +933,12 @@ import {
         gap: 18px;
       }
 
-      .new-task-panel {
-        background: linear-gradient(180deg, rgba(14, 19, 36, 0.92), rgba(22, 30, 50, 0.95));
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        padding: 22px;
-      }
-
       .section-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding-bottom: 8px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      }
-
-      .new-task-panel .section-header {
-        padding-bottom: 0;
-        border-bottom: none;
-        margin-bottom: 10px;
       }
 
       .section-label {
@@ -648,6 +1029,239 @@ import {
         font-weight: 600;
       }
 
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(8, 12, 24, 0.75);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 40;
+      }
+
+      .modal-card {
+        width: min(1100px, 100%);
+        background: linear-gradient(180deg, rgba(14, 19, 36, 0.95), rgba(22, 30, 50, 0.98));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        box-shadow: 0 30px 70px rgba(3, 8, 18, 0.8);
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+      }
+
+      .modal-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn-close {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
+      .materials-search {
+        margin-top: 6px;
+      }
+
+      .materials-actions {
+        margin-top: 8px;
+      }
+
+      .materials-results {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 320px;
+        overflow: auto;
+        padding-right: 4px;
+      }
+
+      .materials-selected {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .materials-selected-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+      }
+
+      .materials-selected-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .materials-selected-row {
+        display: grid;
+        grid-template-columns: 1fr 180px 120px 80px auto;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.02);
+        font-size: 12px;
+      }
+
+      .materials-header {
+        display: grid;
+        grid-template-columns: 1fr 180px 120px 80px;
+        gap: 10px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+        padding: 0 10px;
+      }
+
+      .materials-row {
+        display: grid;
+        grid-template-columns: 1fr 180px 120px 80px;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.02);
+        font-size: 12px;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .materials-row:hover {
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .materials-row.selected {
+        border-color: rgba(251, 146, 60, 0.6);
+        background: rgba(251, 146, 60, 0.12);
+      }
+
+      .btn-remove {
+        height: 28px;
+        padding: 0 10px;
+        font-size: 11px;
+      }
+
+      .materials-code {
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+
+      .materials-desc {
+        color: var(--text-primary);
+      }
+
+      .materials-meta {
+        color: var(--text-secondary);
+        text-align: right;
+      }
+
+      .materials-file {
+        color: #7ab7ff;
+        text-align: right;
+      }
+
+      .materials-file a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .materials-request-error {
+        max-width: 280px;
+        text-align: right;
+      }
+
+      .materials-request-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .materials-request-summary-card {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .materials-request-summary-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+      }
+
+      .materials-request-shared-row {
+        display: grid;
+        grid-template-columns: 240px minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .materials-request-lines {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .materials-request-line {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .materials-request-line-info {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .materials-request-line-fields {
+        display: grid;
+        grid-template-columns: 140px minmax(160px, 1fr) minmax(140px, 1fr) 110px 120px;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .materials-line-detail {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .materials-inline-field {
+        margin: 0;
+      }
+
       .tasks-empty {
         padding: 16px;
         text-align: center;
@@ -683,6 +1297,14 @@ import {
         color: var(--text-secondary);
       }
 
+      .task-preventive {
+        color: rgba(125, 211, 252, 0.9);
+      }
+
+      .task-deferred {
+        color: rgba(252, 211, 77, 0.95);
+      }
+
       .task-actions {
         display: flex;
         align-items: center;
@@ -698,6 +1320,24 @@ import {
         background: rgba(124, 199, 255, 0.1);
         text-transform: uppercase;
         letter-spacing: 0.5px;
+      }
+
+      .task-status.in_progress {
+        color: #facc15;
+        background: rgba(250, 204, 21, 0.12);
+        border: 1px solid rgba(250, 204, 21, 0.25);
+      }
+
+      .task-status.risolte {
+        color: #22c55e;
+        background: rgba(34, 197, 94, 0.12);
+        border: 1px solid rgba(34, 197, 94, 0.25);
+      }
+
+      .task-status.rimandato {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.25);
       }
 
       .task-edit-grid {
@@ -751,7 +1391,120 @@ import {
         }
 
         .stats-grid {
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          flex-wrap: wrap;
+        }
+
+        .stats-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .stats-grid {
+          max-width: 100%;
+        }
+
+        .stats-actions {
+          width: 100%;
+          justify-content: flex-start;
+        }
+
+        .btn-add-compact {
+          margin-left: 0;
+        }
+
+        .materials-row {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+
+        .materials-header {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+
+        .materials-selected-row {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+
+        .materials-meta {
+          text-align: left;
+        }
+
+        .materials-file {
+          text-align: left;
+        }
+
+        .materials-request-summary {
+          grid-template-columns: 1fr;
+        }
+
+        .materials-request-line-fields {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 600px) {
+        .selected-order-card {
+          padding: 16px;
+          border-radius: 18px;
+        }
+
+        .train-number {
+          font-size: 22px;
+        }
+
+        .order-meta-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .stats-actions {
+          width: 100%;
+        }
+
+        .stats-actions .btn {
+          width: 100%;
+        }
+
+        .task-item {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .task-actions {
+          width: 100%;
+          justify-content: flex-start;
+        }
+
+        .task-edit-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .modal-card {
+          width: 100%;
+          max-height: 90vh;
+          overflow: auto;
+          border-radius: 16px;
+          padding: 16px;
+        }
+
+        .materials-request-line-fields {
+          grid-template-columns: 1fr;
+        }
+
+        .materials-request-shared-row {
+          grid-template-columns: 1fr;
+        }
+
+        .modal-header {
+          flex-direction: column;
+          align-items: flex-start;
         }
       }
     `,
@@ -765,11 +1518,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
   capoturnoName = 'Capoturno';
   capoturnoSession: CapoturnoSession | null = null;
   readonly priorityOptions: Task['priority'][] = ['preventiva', 'correttiva', 'urgente'];
+  readonly preventiveOptions = [
+    { label: '2RT', fileName: '2RT.pdf' },
+    { label: '4RT', fileName: '4RT.pdf' },
+    { label: '6M', fileName: '6M.pdf' },
+    { label: '12M PWP', fileName: '12M PWP.pdf' },
+    { label: '12M', fileName: '12M.pdf' },
+    { label: '24M PWP', fileName: '24M PWP.pdf' },
+    { label: '24M', fileName: '24M.pdf' },
+    { label: '1000H', fileName: '1000H.pdf' },
+    { label: '2000H', fileName: '2000H.pdf' },
+    { label: '4000H', fileName: '4000H.pdf' },
+    { label: '6000H', fileName: '6000H.pdf' },
+    { label: '9000H', fileName: '9000H.pdf' },
+    { label: 'PRE_EST', fileName: 'PRE_EST.pdf' },
+    { label: 'PRE_INV', fileName: 'PRE_INV.pdf' },
+    { label: 'REV2', fileName: 'REV2.pdf' },
+    { label: 'RT', fileName: 'RT.pdf' },
+    { label: 'VI', fileName: 'VI.pdf' },
+  ];
   readonly statusOptions: Array<{ value: Task['status']; label: string }> = [
     { value: 'aperta', label: 'Aperta' },
     { value: 'in_progress', label: 'In corso' },
     { value: 'risolte', label: 'Risolte' },
-    { value: 'parziali', label: 'Parziali' },
+    { value: 'rimandato', label: 'Rimandato' },
   ];
   editingTaskId: string | null = null;
   editTaskDraft: {
@@ -786,17 +1558,42 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private techniciansSub?: Subscription;
   private capoturnoSessionSub?: Subscription;
   orderCancellationInProgress = false;
+  isNewTaskModalOpen = false;
+  isMaterialsRequestModalOpen = false;
+  materialsLoading = false;
+  materialsError = '';
+  materialsSearchQuery = '';
+  materialsResults: MaterialItem[] = [];
+  materialsResultsCount = 0;
+  materialsRequestStep: MaterialsRequestStep = 'select';
+  materialsRequestTaskId = '';
+  materialsRequestExportInProgress = false;
+  materialsRequestExportError = '';
+  readonly materialsRequestTypeOptions = ['Garanzia', 'Extra Garanzia'];
+  readonly materialsRequestUmOptions = ['n°', 'kg', 'lt', 'mt', 'kit'];
+  materialsRequestSharedDraft: MaterialRequestSharedFields = this.createEmptyMaterialsRequestSharedDraft();
+  materialsRequestLineDrafts: MaterialRequestLineDraft[] = [];
+  private materialsCatalog: MaterialItem[] = [];
+  selectedMaterials: MaterialItem[] = [];
 
   constructor(
     private fb: FormBuilder,
     private workOrderService: WorkOrderService,
     private technicianService: TechnicianService,
     private capoturnoSessionService: CapoturnoSessionService,
+    private authService: AuthService,
+    private materialRequestExportService: MaterialRequestExportService,
   ) {
     this.newTaskForm = this.fb.group({
       description: ['', Validators.required],
       priority: ['preventiva', Validators.required],
+      preventiveType: [''],
       assignedTechnicianId: ['', Validators.required],
+    });
+    this.newTaskForm.get('priority')?.valueChanges.subscribe((value) => {
+      if (value !== 'preventiva') {
+        this.newTaskForm.get('preventiveType')?.setValue('');
+      }
     });
     this.technicians$ = this.technicianService.getTechnicians();
     this.techniciansSub = this.technicians$.subscribe((list) => {
@@ -821,11 +1618,19 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   onAddTask(): void {
     if (this.newTaskForm.valid && this.selectedOrder?.id) {
+      if (
+        this.newTaskForm.value.priority === 'preventiva' &&
+        !this.newTaskForm.value.preventiveType
+      ) {
+        this.newTaskForm.get('preventiveType')?.markAsTouched();
+        return;
+      }
       const technicianId = this.newTaskForm.value.assignedTechnicianId as string;
       const technician = this.technicianList.find((tech) => tech.id === technicianId);
       const taskPayload: Omit<Task, 'id' | 'status'> = {
         description: this.newTaskForm.value.description,
         priority: this.newTaskForm.value.priority,
+        preventiveType: this.newTaskForm.value.preventiveType ?? undefined,
         assignedTechnicianId: technicianId,
         assignedTechnicianName: technician?.name ?? '',
         assignedTechnicianNickname: technician?.nickname ?? technician?.name ?? '',
@@ -835,9 +1640,277 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.newTaskForm.reset({
         description: '',
         priority: 'preventiva',
-        assignedTechnician: '',
+        preventiveType: '',
+        assignedTechnicianId: '',
       });
+      this.isNewTaskModalOpen = false;
     }
+  }
+
+  openNewTaskModal(): void {
+    this.isNewTaskModalOpen = true;
+  }
+
+  closeNewTaskModal(): void {
+    this.isNewTaskModalOpen = false;
+  }
+
+  openMaterialsRequestModal(): void {
+    this.isMaterialsRequestModalOpen = true;
+    this.resetMaterialsRequestState();
+    if (!this.materialsCatalog.length) {
+      this.loadMaterialsCatalog();
+    } else {
+      this.updateMaterialsResults();
+    }
+  }
+
+  closeMaterialsRequestModal(): void {
+    this.isMaterialsRequestModalOpen = false;
+    this.resetMaterialsRequestState();
+  }
+
+  onMaterialsSearchChange(): void {
+    this.updateMaterialsResults();
+  }
+
+  private loadMaterialsCatalog(): void {
+    this.materialsLoading = true;
+    this.materialsError = '';
+    fetch('/assets/materials/materials.json')
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Impossibile caricare il catalogo');
+        }
+        return res.json();
+      })
+      .then((data: MaterialItem[]) => {
+        this.materialsCatalog = Array.isArray(data) ? data : [];
+        this.updateMaterialsResults();
+      })
+      .catch(() => {
+        this.materialsError = 'Errore nel caricamento del catalogo materiali.';
+      })
+      .finally(() => {
+        this.materialsLoading = false;
+      });
+  }
+
+  private updateMaterialsResults(): void {
+    const query = this.materialsSearchQuery.trim().toLowerCase();
+    let results = this.materialsCatalog;
+    if (query.length >= 2) {
+      results = results.filter((item) => this.matchesMaterialQuery(item, query));
+    }
+    this.materialsResultsCount = results.length;
+    this.materialsResults = results.slice(0, 50);
+  }
+
+  private matchesMaterialQuery(item: MaterialItem, query: string): boolean {
+    const fields = [
+      item.descrizione,
+      item.codice_fs,
+      item.codice_fornitore,
+      item.codice_ditta_documento,
+      item.numero_documento,
+      item.tavola,
+      item.source_pdf,
+    ];
+    return fields.some((value) => value && value.toLowerCase().includes(query));
+  }
+
+  toggleMaterialSelection(item: MaterialItem): void {
+    const key = this.getMaterialKey(item);
+    const exists = this.selectedMaterials.find((m) => this.getMaterialKey(m) === key);
+    if (exists) {
+      this.selectedMaterials = this.selectedMaterials.filter(
+        (m) => this.getMaterialKey(m) !== key,
+      );
+    } else {
+      this.selectedMaterials = [item, ...this.selectedMaterials];
+    }
+  }
+
+  removeSelectedMaterial(item: MaterialItem): void {
+    const key = this.getMaterialKey(item);
+    this.selectedMaterials = this.selectedMaterials.filter(
+      (m) => this.getMaterialKey(m) !== key,
+    );
+    this.materialsRequestLineDrafts = this.materialsRequestLineDrafts.filter(
+      (line) => line.key !== key,
+    );
+  }
+
+  isMaterialSelected(item: MaterialItem): boolean {
+    const key = this.getMaterialKey(item);
+    return this.selectedMaterials.some((m) => this.getMaterialKey(m) === key);
+  }
+
+  private getMaterialKey(item: MaterialItem): string {
+    return [
+      item.numero_documento,
+      item.codice_fs,
+      item.codice_fornitore,
+      item.codice_ditta_documento,
+      item.descrizione,
+      item.numero_pezzi,
+      item.source_pdf,
+      item.source_page,
+    ]
+      .filter((value) => value && value.trim())
+      .join('|');
+  }
+
+  getMaterialFileUrl(item: MaterialItem): string {
+    if (!item.source_pdf) {
+      return '';
+    }
+    const encoded = encodeURIComponent(item.source_pdf);
+    const page = item.source_page?.trim();
+    const pageFragment = page ? `#page=${encodeURIComponent(page)}` : '';
+    return `/assets/materials-pdf/${encoded}${pageFragment}`;
+  }
+
+  canProceedToMaterialsRequestDetails(): boolean {
+    return Boolean(this.materialsRequestTaskId && this.selectedMaterials.length);
+  }
+
+  proceedToMaterialsRequestDetails(): void {
+    if (!this.canProceedToMaterialsRequestDetails()) {
+      this.materialsRequestExportError =
+        'Seleziona una lavorazione e almeno un materiale prima di continuare.';
+      return;
+    }
+
+    this.materialsRequestExportError = '';
+    this.materialsRequestStep = 'details';
+    this.syncMaterialsRequestLineDrafts();
+  }
+
+  backToMaterialsRequestSelection(): void {
+    this.materialsRequestExportError = '';
+    this.materialsRequestStep = 'select';
+  }
+
+  canExportMaterialsRequest(): boolean {
+    const shared = this.materialsRequestSharedDraft;
+    const sharedValid = Boolean(this.normalizeDraftValue(shared.cassa));
+
+    const linesValid =
+      this.materialsRequestLineDrafts.length > 0 &&
+      this.materialsRequestLineDrafts.every(
+        (line) =>
+          Boolean(this.normalizeDraftValue(line.avviso)) &&
+          Boolean(this.normalizeDraftValue(line.guasto)) &&
+          Boolean(this.normalizeDraftValue(line.quantity)) &&
+          Boolean(this.normalizeDraftValue(line.tipoIntervento)) &&
+          Boolean(this.normalizeDraftValue(line.um)),
+      );
+
+    return sharedValid && linesValid;
+  }
+
+  async exportMaterialsRequest(): Promise<void> {
+    if (!this.selectedOrder || !this.canExportMaterialsRequest()) {
+      this.materialsRequestExportError =
+        'Compila tutti i campi obbligatori prima di generare il file Excel.';
+      return;
+    }
+
+    const lines = this.materialsRequestLineDrafts.reduce<Record<string, MaterialRequestLineFields>>(
+      (accumulator, line) => {
+        accumulator[line.key] = {
+          avviso: this.normalizeDraftValue(line.avviso),
+          guasto: this.normalizeDraftValue(line.guasto),
+          tipoIntervento: this.normalizeDraftValue(line.tipoIntervento),
+          quantity: this.normalizeDraftValue(line.quantity),
+          um: this.normalizeDraftValue(line.um),
+        };
+        return accumulator;
+      },
+      {},
+    );
+
+    this.materialsRequestExportInProgress = true;
+    this.materialsRequestExportError = '';
+
+    try {
+      await this.materialRequestExportService.exportRequest({
+        order: this.selectedOrder,
+        materials: this.selectedMaterials,
+        shared: {
+          cassa: this.normalizeDraftValue(this.materialsRequestSharedDraft.cassa),
+          note: this.normalizeDraftValue(this.materialsRequestSharedDraft.note),
+        },
+        lines,
+      });
+      this.closeMaterialsRequestModal();
+    } catch (error) {
+      console.error(error);
+      const detail = error instanceof Error ? error.message : String(error);
+      this.materialsRequestExportError = `Errore: ${detail}`;
+    } finally {
+      this.materialsRequestExportInProgress = false;
+    }
+  }
+
+  getSelectedMaterialsTaskDescription(): string {
+    return (
+      this.selectedOrder?.tasks.find((task) => task.id === this.materialsRequestTaskId)?.description ||
+      '-'
+    );
+  }
+
+  private resetMaterialsRequestState(): void {
+    this.materialsRequestStep = 'select';
+    this.materialsRequestTaskId = '';
+    this.materialsSearchQuery = '';
+    this.materialsRequestExportInProgress = false;
+    this.materialsRequestExportError = '';
+    this.materialsRequestSharedDraft = this.createEmptyMaterialsRequestSharedDraft();
+    this.materialsRequestLineDrafts = [];
+    this.selectedMaterials = [];
+  }
+
+  private createEmptyMaterialsRequestSharedDraft(): MaterialRequestSharedFields {
+    return {
+      cassa: '',
+      note: '',
+    };
+  }
+
+  private syncMaterialsRequestLineDrafts(): void {
+    const existing = new Map(
+      this.materialsRequestLineDrafts.map((line) => [line.key, line]),
+    );
+
+    this.materialsRequestLineDrafts = this.selectedMaterials.map((item) => {
+      const key = this.getMaterialKey(item);
+      const current = existing.get(key);
+      return {
+        item,
+        key,
+        avviso: current?.avviso ?? '',
+        guasto: current?.guasto ?? '',
+        quantity: current?.quantity ?? '',
+        tipoIntervento: current?.tipoIntervento ?? '',
+        um: current?.um ?? '',
+      };
+    });
+  }
+
+  private normalizeDraftValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).trim();
+  }
+
+  openPreventiveFile(type: string): void {
+    const match = this.preventiveOptions.find((option) => option.label === type);
+    const fileName = match?.fileName ?? `${type}.pdf`;
+    const url = `/assets/preventive/${encodeURIComponent(fileName)}`;
+    window.open(url, '_blank', 'noopener');
   }
 
   startEditTask(task: Task): void {
@@ -861,10 +1934,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const technician = this.technicianList.find(
       (tech) => tech.id === this.editTaskDraft.assignedTechnicianId,
     );
+    const normalizedStatus = this.normalizeTaskStatus(this.editTaskDraft.status);
     this.workOrderService.updateTask(this.selectedOrder.id, task.id, {
       description: this.editTaskDraft.description,
       priority: this.editTaskDraft.priority,
-      status: this.editTaskDraft.status,
+      status: normalizedStatus,
       assignedTechnicianId: this.editTaskDraft.assignedTechnicianId,
       assignedTechnicianName: technician?.name ?? '',
       assignedTechnicianNickname: technician?.nickname ?? technician?.name ?? '',
@@ -887,7 +1961,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   getTasksByStatus(status: string): number {
     if (!this.selectedOrder) return 0;
-    return this.selectedOrder.tasks.filter((t) => t.status === status).length;
+    return this.selectedOrder.tasks.filter((t) => this.normalizeTaskStatus(t.status) === status)
+      .length;
+  }
+
+  private normalizeTaskStatus(status: Task['status'] | string): Task['status'] {
+    if (status === 'in_rpgress') {
+      return 'in_progress';
+    }
+    if (status === 'In corso') {
+      return 'in_progress';
+    }
+    return status as Task['status'];
+  }
+
+  getTaskStatusClass(status: Task['status'] | string): Task['status'] {
+    return this.normalizeTaskStatus(status);
+  }
+
+  getTaskStatusLabel(status: Task['status'] | string): string {
+    const normalized = this.normalizeTaskStatus(status);
+    if (normalized === 'in_progress') return 'In corso';
+    if (normalized === 'risolte') return 'Risolte';
+    if (normalized === 'rimandato') return 'Rimandato';
+    return 'Aperta';
   }
 
   ngOnDestroy(): void {
@@ -905,15 +2002,43 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (!confirmed) {
       return;
     }
+    const session = this.capoturnoSession;
+    if (!session) {
+      window.alert('Sessione capoturno non valida. Effettua di nuovo il login.');
+      return;
+    }
+    const password = window.prompt(
+      `Conferma l'annullamento inserendo la password dell'account ${session.nickname}:`,
+    );
+    if (password === null) {
+      return;
+    }
+    const trimmedPassword = password.trim();
+    if (!trimmedPassword) {
+      window.alert('Password obbligatoria per annullare l’ODL.');
+      return;
+    }
+
     this.orderCancellationInProgress = true;
-    this.workOrderService.cancelWorkOrder(this.selectedOrder.id).subscribe({
-      next: () => {
-        this.orderCancellationInProgress = false;
-      },
-      error: () => {
-        this.orderCancellationInProgress = false;
-      },
-    });
+    this.authService
+      .loginCapoturno({ nickname: session.nickname, matricola: trimmedPassword })
+      .subscribe({
+        next: () => {
+          this.workOrderService.cancelWorkOrder(this.selectedOrder!.id).subscribe({
+            next: () => {
+              this.orderCancellationInProgress = false;
+            },
+            error: () => {
+              this.orderCancellationInProgress = false;
+              window.alert('Impossibile annullare l’ODL. Riprova.');
+            },
+          });
+        },
+        error: () => {
+          this.orderCancellationInProgress = false;
+          window.alert('Password errata. Annullamento non eseguito.');
+        },
+      });
   }
 
   canCancelOrder(): boolean {

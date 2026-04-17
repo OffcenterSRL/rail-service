@@ -6,7 +6,8 @@
     "dev:frontend": "npm --prefix packages/frontend run dev",
     "dev:backend": "npm --prefix packages/backend run dev",
     "deploy:frontend": "npm --prefix packages/frontend run build && tar -czf deploy.tar -C packages/frontend dist captain-definition && caprover deploy -t ./deploy.tar -n notify -a rail-service-client && rm -f deploy.tar",
-    "deploy:backend": "npm --prefix packages/backend run build && tar -czf deploy-backend.tar -C packages/backend dist package.json captain-definition && caprover deploy -t ./deploy-backend.tar -n notify -a rail-service-api && rm -f deploy-backend.tar"
+    "deploy:backend": "npm --prefix packages/backend run build && tar -czf deploy-backend.tar -C packages/backend dist package.json captain-definition && caprover deploy -t ./deploy-backend.tar -n notify -a rail-service-api && rm -f deploy-backend.tar",
+    "release": "npm run deploy:frontend && npm run deploy:backend"
   },
   "private": true,
   "dependencies": {},

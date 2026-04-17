@@ -7,12 +7,16 @@ export interface Task {
   id: string;
   description: string;
   priority: 'preventiva' | 'correttiva' | 'urgente';
+  preventiveType?: string;
   assignedTechnicianId?: string;
   assignedTechnicianName: string;
   assignedTechnicianNickname: string;
-  status: 'aperta' | 'in_progress' | 'risolte' | 'parziali';
+  status: 'aperta' | 'in_progress' | 'risolte' | 'rimandato';
   timeSpentMinutes?: number;
   performedBy?: Array<{ id: string; name: string; matricola: string }>;
+  deferredKey?: string;
+  deferredSince?: string;
+  deferredCount?: number;
 }
 
 export interface WorkOrder {
@@ -36,10 +40,13 @@ export class WorkOrderService {
   private orderMeta: Record<string, { assignedTechnician?: string; odlNumber?: string }> = {};
   private readonly tasksStorageKey = 'rail-work-order-tasks';
   private readonly metaStorageKey = 'rail-work-order-meta';
+  private readonly deferredStorageKey = 'rail-work-order-deferred';
+  private deferredByTrain: Record<string, DeferredTaskRecord[]> = {};
 
   constructor(private ticketService: TicketService) {
     this.loadTasksCache();
     this.loadOrderMetaCache();
+    this.loadDeferredCache();
     this.refreshWorkOrders();
   }
 
@@ -113,9 +120,23 @@ export class WorkOrderService {
       return;
     }
     const existing = this.tasksCache[workOrderId] ?? [];
-    const next = existing.map((task) =>
-      task.id === taskId ? { ...task, ...updates } : task,
-    );
+    const order = this.workOrders$.value.find((item) => item.id === workOrderId);
+    const next = existing.map((task) => {
+      if (task.id !== taskId) {
+        return task;
+      }
+      let updated = { ...task, ...updates };
+      if (order?.trainNumber) {
+        updated = this.applyDeferredRules(
+          order.trainNumber,
+          workOrderId,
+          task,
+          updated,
+          order.createdAt,
+        );
+      }
+      return updated;
+    });
     this.tasksCache[workOrderId] = next;
     this.persistTasksCache();
     this.refreshTasksForOrder(workOrderId);
@@ -153,7 +174,13 @@ export class WorkOrderService {
     ticket: TicketRecord,
     meta?: { assignedTechnician?: string; odlNumber?: string },
   ): WorkOrder {
-    const tasks = this.tasksCache[ticket._id] ?? [];
+    let tasks = this.tasksCache[ticket._id] ?? [];
+    const deferredToAdd = this.buildDeferredTasksForOrder(ticket.trainId, tasks);
+    if (deferredToAdd.length) {
+      tasks = [...tasks, ...deferredToAdd];
+      this.tasksCache[ticket._id] = tasks;
+      this.persistTasksCache();
+    }
     const manualOdl = meta?.odlNumber?.trim();
     return {
       id: ticket._id,
@@ -252,6 +279,124 @@ export class WorkOrderService {
     return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  private buildDeferredTasksForOrder(trainNumber: string, existingTasks: Task[]): Task[] {
+    const deferredList = (this.deferredByTrain[trainNumber] ?? []).filter(
+      (item) => item.active !== false,
+    );
+    if (!deferredList.length) {
+      return [];
+    }
+    const existingKeys = new Set(
+      existingTasks.map((task) => task.deferredKey).filter((key): key is string => !!key),
+    );
+    const toAdd = deferredList
+      .filter((item) => !existingKeys.has(item.deferredKey))
+      .map((item) => ({
+        id: this.generateTaskId(),
+        description: item.description,
+        priority: item.priority,
+        assignedTechnicianId: item.assignedTechnicianId,
+        assignedTechnicianName: item.assignedTechnicianName,
+        assignedTechnicianNickname: item.assignedTechnicianNickname,
+        status: 'rimandato' as const,
+        deferredKey: item.deferredKey,
+        deferredSince: item.deferredSince,
+        deferredCount: item.deferredCount,
+      }));
+    if (!toAdd.length) {
+      return [];
+    }
+    return toAdd;
+  }
+
+  private applyDeferredRules(
+    trainNumber: string,
+    workOrderId: string,
+    previous: Task,
+    next: Task,
+    orderCreatedAt?: Date,
+  ): Task {
+    if (next.status === 'rimandato') {
+      const nowIso = new Date().toISOString();
+      const existing = this.findDeferredRecord(trainNumber, next.deferredKey);
+      const createdAtIso = orderCreatedAt
+        ? new Date(orderCreatedAt).toISOString()
+        : nowIso;
+      const deferredSince = next.deferredSince ?? existing?.deferredSince ?? createdAtIso;
+      let deferredCount = next.deferredCount ?? existing?.deferredCount ?? 0;
+      const shouldIncrement =
+        previous.status !== 'rimandato' || existing?.lastDeferredOrderId !== workOrderId;
+      if (shouldIncrement) {
+        deferredCount = Math.max(1, deferredCount + 1);
+      }
+      const deferredKey = next.deferredKey ?? existing?.deferredKey ?? this.generateTaskId();
+      const record: DeferredTaskRecord = {
+        deferredKey,
+        description: next.description,
+        priority: next.priority,
+        assignedTechnicianId: next.assignedTechnicianId,
+        assignedTechnicianName: next.assignedTechnicianName,
+        assignedTechnicianNickname: next.assignedTechnicianNickname,
+        deferredSince,
+        deferredCount,
+        lastDeferredOrderId: workOrderId,
+        active: true,
+      };
+      this.upsertDeferredRecord(trainNumber, record);
+      next.deferredKey = deferredKey;
+      next.deferredSince = deferredSince;
+      next.deferredCount = deferredCount;
+      return next;
+    }
+
+    if (previous.status === 'rimandato' && previous.deferredKey) {
+      if (next.status === 'risolte') {
+        this.removeDeferredRecord(trainNumber, previous.deferredKey);
+      } else {
+        const existing = this.findDeferredRecord(trainNumber, previous.deferredKey);
+        if (existing) {
+          this.upsertDeferredRecord(trainNumber, {
+            ...existing,
+            active: false,
+            lastDeferredOrderId: workOrderId,
+          });
+        }
+      }
+    }
+    return next;
+  }
+
+  private findDeferredRecord(
+    trainNumber: string,
+    deferredKey?: string,
+  ): DeferredTaskRecord | undefined {
+    if (!deferredKey) {
+      return undefined;
+    }
+    return (this.deferredByTrain[trainNumber] ?? []).find(
+      (item) => item.deferredKey === deferredKey,
+    );
+  }
+
+  private upsertDeferredRecord(trainNumber: string, record: DeferredTaskRecord): void {
+    const list = this.deferredByTrain[trainNumber] ?? [];
+    const index = list.findIndex((item) => item.deferredKey === record.deferredKey);
+    if (index >= 0) {
+      list[index] = record;
+    } else {
+      list.push(record);
+    }
+    this.deferredByTrain[trainNumber] = list;
+    this.persistDeferredCache();
+  }
+
+  private removeDeferredRecord(trainNumber: string, deferredKey: string): void {
+    const list = this.deferredByTrain[trainNumber] ?? [];
+    const next = list.filter((item) => item.deferredKey !== deferredKey);
+    this.deferredByTrain[trainNumber] = next;
+    this.persistDeferredCache();
+  }
+
   private loadTasksCache(): void {
     if (typeof window === 'undefined') {
       return;
@@ -315,4 +460,49 @@ export class WorkOrderService {
     });
     return normalized;
   }
+
+  private loadDeferredCache(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const serialized = window.localStorage.getItem(this.deferredStorageKey);
+      if (!serialized) {
+        return;
+      }
+      const parsed = JSON.parse(serialized) as Record<string, DeferredTaskRecord[]>;
+      if (parsed && typeof parsed === 'object') {
+        this.deferredByTrain = parsed;
+      }
+    } catch {
+      this.deferredByTrain = {};
+    }
+  }
+
+  private persistDeferredCache(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        this.deferredStorageKey,
+        JSON.stringify(this.deferredByTrain),
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }
+}
+
+interface DeferredTaskRecord {
+  deferredKey: string;
+  description: string;
+  priority: Task['priority'];
+  assignedTechnicianId?: string;
+  assignedTechnicianName: string;
+  assignedTechnicianNickname: string;
+  deferredSince: string;
+  deferredCount: number;
+  lastDeferredOrderId: string;
+  active: boolean;
 }

@@ -276,7 +276,7 @@ type AssignedTask = {
                       <select [(ngModel)]="taskStatus">
                         <option value="aperta">Aperta</option>
                         <option value="in_progress">In corso</option>
-                        <option value="parziali">Parziali</option>
+                        <option value="rimandato">Rimandato</option>
                         <option value="risolte">Completato</option>
                       </select>
                     </label>
@@ -771,11 +771,6 @@ type AssignedTask = {
         color: #82ffa9;
       }
 
-      .status-pill.parziali {
-        background: rgba(255, 214, 102, 0.16);
-        color: #ffd666;
-      }
-
       .compile-header h4 {
         margin: 0;
         color: var(--text-primary);
@@ -1029,6 +1024,24 @@ type AssignedTask = {
 
         .login-card {
           padding: 20px;
+        }
+
+        .main-layout {
+          gap: 10px;
+        }
+
+        .sidebar {
+          padding: 12px 0;
+          border-radius: 16px;
+        }
+
+        .main-content {
+          border-radius: 16px;
+          padding: 12px;
+        }
+
+        .app-footer {
+          text-align: center;
         }
       }
     `,
@@ -1409,7 +1422,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private formatStatus(status: Task['status'] | WorkOrder['status']): string {
     if (status === 'in_progress') return 'In corso';
     if (status === 'risolte') return 'Risolte';
-    if (status === 'parziali') return 'Parziali';
+    if (status === 'rimandato') return 'Rimandato';
     if (status === 'aperta') return 'Aperta';
     if (status === 'pending') return 'In attesa';
     if (status === 'active') return 'In corso';
@@ -1549,7 +1562,7 @@ export class AppComponent implements OnInit, OnDestroy {
   taskStatusLabel(status: Task['status']): string {
     if (status === 'in_progress') return 'In corso';
     if (status === 'risolte') return 'Risolte';
-    if (status === 'parziali') return 'Parziali';
+    if (status === 'rimandato') return 'Rimandato';
     return 'Aperta';
   }
 

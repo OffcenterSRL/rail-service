@@ -382,6 +382,7 @@ import { Technician, TechnicianService } from '../../services/technician.service
       @media (max-width: 600px) {
         .new-order-section {
           padding: 12px 0;
+          grid-template-columns: 1fr;
         }
 
         .order-card {
@@ -402,6 +403,24 @@ import { Technician, TechnicianService } from '../../services/technician.service
 
         .orders-list {
           gap: 10px;
+        }
+
+        .header-controls {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .search-field {
+          min-width: 0;
+          width: 100%;
+        }
+
+        .completed-toggle {
+          width: 100%;
+        }
+
+        .btn-create {
+          width: 100%;
         }
       }
     `,

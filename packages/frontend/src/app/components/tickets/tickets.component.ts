@@ -242,6 +242,36 @@ import { TicketRecord, TicketService } from '../../services/ticket.service';
           grid-template-columns: 1fr;
         }
       }
+
+      @media (max-width: 600px) {
+        .tickets-hero {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 16px;
+          padding: 18px;
+        }
+
+        .tickets-action {
+          width: 100%;
+        }
+
+        .tickets-list {
+          padding: 16px;
+        }
+
+        .ticket-meta {
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .ticket-actions {
+          justify-content: stretch;
+        }
+
+        .btn-ghost {
+          width: 100%;
+        }
+      }
     `,
   ],
 })
