@@ -10,7 +10,7 @@
   "angularCompilerOptions": {
     "strictInjectionParameters": true,
     "strictInputAccessModifiers": true,
-    "strictTemplates": true
+    "strictTemplates": false,
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

@@ -221,7 +221,7 @@ export const deleteCapoturnoRecord = (id: string): CapoturnoRecord | null => {
   return record;
 };
 
-export const buildDashboardSummary = (tickets: TicketRecord[]): DashboardSummary => {
+export const buildDashboardSummary = (tickets: Array<{ status: string }>): DashboardSummary => {
   const nowTs = new Date().toISOString();
   const active = tickets.filter((ticket) => ticket.status === 'active').length;
   const cancelled = tickets.filter((ticket) => ticket.status === 'cancelled').length;

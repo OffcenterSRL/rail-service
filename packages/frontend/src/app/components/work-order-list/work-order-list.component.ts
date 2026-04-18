@@ -78,7 +78,7 @@ import { Technician, TechnicianService } from '../../services/technician.service
 
         <div *ngIf="workOrders.length > 0; else emptyState" class="orders-list">
           <div
-            *ngFor="let order of workOrders"
+            *ngFor="let order of workOrders; trackBy: trackByOrderId"
             (click)="selectOrder(order)"
             class="order-card"
             [class.active]="isOrderActive(order)"
@@ -635,6 +635,10 @@ export class WorkOrderListComponent implements OnInit {
     this.workOrderService.selectWorkOrder(order);
   }
 
+  trackByOrderId(_index: number, order: WorkOrder): string {
+    return order.id;
+  }
+
   isOrderActive(order: WorkOrder): boolean {
     return this.selectedWorkOrder?.id === order.id;
   }
@@ -670,6 +674,7 @@ export class WorkOrderListComponent implements OnInit {
 
   private sortTrainNumber(a: string, b: string): number {
     const parse = (s: string) => {
+      if (!s) return { series: 0, unit: 0 };
       const m = s.match(/^([A-Za-z]+)(\d+)[-_]?(\d*)$/);
       if (!m) return { series: 0, unit: 0 };
       return { series: parseInt(m[2], 10), unit: parseInt(m[3] || '0', 10) };
@@ -705,7 +710,11 @@ export class WorkOrderListComponent implements OnInit {
         }
         return !isHidden;
       })
-      .sort((a, b) => this.sortTrainNumber(a.trainNumber, b.trainNumber));
+      .sort((a, b) => {
+        const byTrain = this.sortTrainNumber(a.trainNumber, b.trainNumber);
+        if (byTrain !== 0) return byTrain;
+        return a.codiceODL.localeCompare(b.codiceODL);
+      });
   }
 
   // Intentionally no local shift selection: uses capoturno session.

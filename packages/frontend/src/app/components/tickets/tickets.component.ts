@@ -28,22 +28,15 @@ import { TicketRecord, TicketService } from '../../services/ticket.service';
         <div *ngIf="!loading && tickets.length" class="ticket-grid">
           <article *ngFor="let ticket of tickets" class="ticket-card">
             <div class="ticket-row">
-              <span class="ticket-train">{{ ticket.trainId }}</span>
+              <span class="ticket-train">{{ ticket.trainNumber }}</span>
               <span class="ticket-status" [ngClass]="ticket.status">
                 {{ ticket.status | titlecase }}
               </span>
             </div>
-            <p class="ticket-route">
-              {{ ticket.departureStation }} &rarr; {{ ticket.arrivalStation }}
-            </p>
-            <p class="ticket-time">
-              {{ ticket.departureTime | date: 'shortTime' }}
-              &nbsp;–&nbsp;
-              {{ ticket.arrivalTime | date: 'shortTime' }}
-            </p>
+            <p class="ticket-route">{{ ticket.codiceODL }}</p>
+            <p class="ticket-time">{{ ticket.shift }}</p>
             <div class="ticket-meta">
-              <span>Posto {{ ticket.seatNumber }}</span>
-              <span>€ {{ ticket.price.toFixed(2) }}</span>
+              <span>{{ ticket.tasks.length }} task</span>
             </div>
             <div class="ticket-actions">
               <button
@@ -291,16 +284,9 @@ export class TicketsComponent implements OnInit {
   createTicket(): void {
     this.creatingTicket = true;
     this.actionMessage = '';
-    const now = new Date();
     const payload = {
-      userId: `user-${Math.floor(Math.random() * 999)}`,
-      trainId: 'ETR700-12',
-      departureStation: 'Roma Tiburtina',
-      arrivalStation: 'Milano Centrale',
-      departureTime: now.toISOString(),
-      arrivalTime: new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString(),
-      price: 129,
-      seatNumber: `0${Math.floor(Math.random() * 30) + 1}A`,
+      trainNumber: 'ETR700-12',
+      shift: 'Turno in corso',
     };
 
     this.ticketService.bookTicket(payload).subscribe({
@@ -323,7 +309,7 @@ export class TicketsComponent implements OnInit {
     this.ticketService.cancelTicket(ticket._id).subscribe({
       next: () => {
         this.cancelingTicketId = null;
-        this.actionMessage = `Biglietto ${ticket.trainId} annullato.`;
+        this.actionMessage = `Ordine ${ticket.trainNumber} annullato.`;
         this.loadTickets();
       },
       error: () => {

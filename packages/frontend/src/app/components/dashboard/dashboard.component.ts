@@ -1617,12 +1617,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.workOrderService.getSelectedWorkOrder().subscribe((order) => {
+      const idChanged = order?.id !== this.selectedOrder?.id;
       this.selectedOrder = order;
-    this.newTaskForm.reset({
-      description: '',
-      priority: 'preventiva',
-      assignedTechnicianId: '',
-    });
+      if (idChanged) {
+        this.newTaskForm.reset({
+          description: '',
+          priority: 'preventiva',
+          assignedTechnicianId: '',
+        });
+      }
     });
     this.capoturnoSessionSub = this.capoturnoSessionService.getSession().subscribe((session) => {
       this.capoturnoSession = session;
