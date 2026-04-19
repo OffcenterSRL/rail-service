@@ -19,8 +19,8 @@ export class TechnicianService {
   constructor(private http: HttpClient) {}
 
   getTechnicians(): Observable<Technician[]> {
-    return this.http.get<{ data: Technician[] }>(`${API_BASE_URL}/technicians`).pipe(
-      map((response) => response.data),
+    return this.http.get<{ data: Array<Technician & { _id?: string }> }>(`${API_BASE_URL}/technicians`).pipe(
+      map((response) => response.data.map((t) => ({ ...t, id: t.id ?? t._id ?? '' }))),
     );
   }
 }

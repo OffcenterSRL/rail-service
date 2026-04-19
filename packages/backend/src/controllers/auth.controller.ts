@@ -1,65 +1,57 @@
 import { Request, Response } from 'express';
-import { getCapoturnoList, getTechnicianList } from '../data/mock-data';
+import { Technician, Capoturno } from '../models/technician.model';
 
-export const loginTechnician = (req: Request, res: Response) => {
-  const { nickname, matricola } = req.body as {
-    nickname?: string;
-    matricola?: string;
-  };
-
+export const loginTechnician = async (req: Request, res: Response) => {
+  const { nickname, matricola } = req.body as { nickname?: string; matricola?: string };
   if (!nickname || !matricola) {
     return res.status(400).json({ error: 'Nickname e matricola sono obbligatori.' });
   }
-
-  const normalizedMatricola = matricola.toUpperCase();
-  const metadata = getTechnicianList().find(
-    (tech) =>
-      tech.matricola.toUpperCase() === normalizedMatricola &&
-      tech.nickname.toLowerCase() === nickname.toLowerCase(),
-  );
-
-  if (!metadata) {
-    return res.status(401).json({ error: 'Tecnico non trovato o non autorizzato.' });
+  try {
+    const tech = await Technician.findOne({
+      matricola: { $regex: new RegExp(`^${matricola.trim()}$`, 'i') },
+      nickname: { $regex: new RegExp(`^${nickname.trim()}$`, 'i') },
+    }).lean();
+    if (!tech) {
+      return res.status(401).json({ error: 'Tecnico non trovato o non autorizzato.' });
+    }
+    return res.json({
+      data: {
+        name: tech.name,
+        nickname: tech.nickname,
+        matricola: tech.matricola,
+        team: tech.team,
+        message: `Tecnico ${tech.nickname} autenticato.`,
+      },
+    });
+  } catch (error) {
+    console.warn('⚠️ Login tecnico fallito:', (error as Error).message);
+    return res.status(500).json({ error: 'Errore durante il login.' });
   }
-
-  return res.json({
-    data: {
-      name: metadata.name,
-      nickname: metadata.nickname,
-      matricola: metadata.matricola,
-      team: metadata.team,
-      message: `Tecnico ${metadata.nickname ?? metadata.name} autenticato.`,
-    },
-  });
 };
 
-export const loginCapoturno = (req: Request, res: Response) => {
-  const { nickname, matricola } = req.body as {
-    nickname?: string;
-    matricola?: string;
-  };
-
+export const loginCapoturno = async (req: Request, res: Response) => {
+  const { nickname, matricola } = req.body as { nickname?: string; matricola?: string };
   if (!nickname || !matricola) {
     return res.status(400).json({ error: 'Nickname e matricola sono obbligatori.' });
   }
-
-  const normalizedMatricola = matricola.toUpperCase();
-  const metadata = getCapoturnoList().find(
-    (capo) =>
-      capo.matricola.toUpperCase() === normalizedMatricola &&
-      capo.nickname.toLowerCase() === nickname.toLowerCase(),
-  );
-
-  if (!metadata) {
-    return res.status(401).json({ error: 'Capoturno non trovato o non autorizzato.' });
+  try {
+    const capo = await Capoturno.findOne({
+      matricola: { $regex: new RegExp(`^${matricola.trim()}$`, 'i') },
+      nickname: { $regex: new RegExp(`^${nickname.trim()}$`, 'i') },
+    }).lean();
+    if (!capo) {
+      return res.status(401).json({ error: 'Capoturno non trovato o non autorizzato.' });
+    }
+    return res.json({
+      data: {
+        name: capo.name,
+        nickname: capo.nickname,
+        matricola: capo.matricola,
+        message: `Capoturno ${capo.nickname} autenticato.`,
+      },
+    });
+  } catch (error) {
+    console.warn('⚠️ Login capoturno fallito:', (error as Error).message);
+    return res.status(500).json({ error: 'Errore durante il login.' });
   }
-
-  return res.json({
-    data: {
-      name: metadata.name,
-      nickname: metadata.nickname,
-      matricola: metadata.matricola,
-      message: `Capoturno ${metadata.nickname ?? metadata.name} autenticato.`,
-    },
-  });
 };

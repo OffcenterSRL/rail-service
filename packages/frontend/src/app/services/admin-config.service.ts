@@ -31,20 +31,20 @@ export class AdminConfigService {
 
   getTechnicians(password: string): Observable<TechnicianConfig[]> {
     return this.http
-      .get<{ data: TechnicianConfig[] }>(`${API_BASE_URL}/admin/technicians`, {
+      .get<{ data: Array<TechnicianConfig & { _id?: string }> }>(`${API_BASE_URL}/admin/technicians`, {
         headers: this.buildHeaders(password),
       })
-      .pipe(map((response) => response.data));
+      .pipe(map((response) => response.data.map((t) => ({ ...t, id: t.id ?? t._id ?? '' }))));
   }
 
   updateTechnicians(password: string, technicians: TechnicianConfig[]): Observable<TechnicianConfig[]> {
     return this.http
-      .put<{ data: TechnicianConfig[] }>(
+      .put<{ data: Array<TechnicianConfig & { _id?: string }> }>(
         `${API_BASE_URL}/admin/technicians`,
         { technicians },
         { headers: this.buildHeaders(password) },
       )
-      .pipe(map((response) => response.data));
+      .pipe(map((response) => response.data.map((t) => ({ ...t, id: t.id ?? t._id ?? '' }))));
   }
 
   saveTechnician(password: string, technician: TechnicianConfig): Observable<TechnicianConfig> {
@@ -76,20 +76,20 @@ export class AdminConfigService {
 
   getCapoturni(password: string): Observable<CapoturnoConfig[]> {
     return this.http
-      .get<{ data: CapoturnoConfig[] }>(`${API_BASE_URL}/admin/capoturni`, {
+      .get<{ data: Array<CapoturnoConfig & { _id?: string }> }>(`${API_BASE_URL}/admin/capoturni`, {
         headers: this.buildHeaders(password),
       })
-      .pipe(map((response) => response.data));
+      .pipe(map((response) => response.data.map((c) => ({ ...c, id: c.id ?? c._id ?? '' }))));
   }
 
   updateCapoturni(password: string, capoturni: CapoturnoConfig[]): Observable<CapoturnoConfig[]> {
     return this.http
-      .put<{ data: CapoturnoConfig[] }>(
+      .put<{ data: Array<CapoturnoConfig & { _id?: string }> }>(
         `${API_BASE_URL}/admin/capoturni`,
         { capoturni },
         { headers: this.buildHeaders(password) },
       )
-      .pipe(map((response) => response.data));
+      .pipe(map((response) => response.data.map((c) => ({ ...c, id: c.id ?? c._id ?? '' }))));
   }
 
   saveCapoturno(password: string, capoturno: CapoturnoConfig): Observable<CapoturnoConfig> {
