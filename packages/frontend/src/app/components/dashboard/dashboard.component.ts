@@ -2,48 +2,15 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
-import { Observable, Subscription } from 'rxjs';
+import { Subscription } from 'rxjs';
 import { AuthService, CapoturnoSession } from '../../services/auth.service';
 import { CapoturnoSessionService } from '../../services/capoturno-session.service';
-import {
-  MaterialRequestExportService,
-  MaterialRequestLineFields,
-  MaterialRequestSharedFields,
-} from '../../services/material-request-export.service';
-import { TechnicianService, Technician } from '../../services/technician.service';
 import {
   Task,
   WorkOrder,
   WorkOrderService,
 } from '../../services/work-order.service';
 
-interface MaterialItem {
-  tavola: string;
-  codice_fs: string;
-  descrizione: string;
-  riferimento: string;
-  codice_fornitore: string;
-  codice_ditta_documento: string;
-  numero_documento: string;
-  segno_matr_pos: string;
-  numero_pezzi: string;
-  unita_conto: string;
-  note: string;
-  source_pdf: string;
-  source_page: string;
-}
-
-interface MaterialRequestLineDraft {
-  item: MaterialItem;
-  key: string;
-  avviso: string;
-  guasto: string;
-  quantity: string;
-  tipoIntervento: string;
-  um: string;
-}
-
-type MaterialsRequestStep = 'select' | 'details';
 
 @Component({
   selector: 'app-dashboard',
@@ -73,10 +40,19 @@ type MaterialsRequestStep = 'select' | 'details';
             </div>
             <div class="header-actions">
               <button
+                class="btn btn-success btn-add-compact"
+                type="button"
+                (click)="closeWorkOrder()"
+                [disabled]="getCompletionRate() < 100 || orderClosingInProgress || orderCancellationInProgress"
+                [title]="getCompletionRate() < 100 ? 'Disponibile solo al 100% di avanzamento' : ''"
+              >
+                {{ orderClosingInProgress ? 'Chiusura...' : 'Chiudi ODL' }}
+              </button>
+              <button
                 class="btn btn-danger btn-add-compact"
                 type="button"
                 (click)="cancelWorkOrder()"
-                [disabled]="!canCancelOrder() || orderCancellationInProgress"
+                [disabled]="!canCancelOrder() || orderCancellationInProgress || orderClosingInProgress"
               >
                 {{ orderCancellationInProgress ? 'Annullamento...' : 'Annulla ODL' }}
               </button>
@@ -124,13 +100,6 @@ type MaterialsRequestStep = 'select' | 'details';
               </div>
             </div>
             <div class="stats-actions">
-              <button
-                class="btn btn-secondary btn-add-compact"
-                type="button"
-                (click)="openMaterialsRequestModal()"
-              >
-                Richiesta materiali
-              </button>
               <button class="btn btn-add btn-add-compact" type="button" (click)="openNewTaskModal()">
                 Aggiungi lavorazione
               </button>
@@ -169,11 +138,10 @@ type MaterialsRequestStep = 'select' | 'details';
                   />
                 </label>
                 <label class="field-group">
-                  <span class="field-label">Priorità</span>
+                  <span class="field-label">Tipo lavorazione</span>
                   <select formControlName="priority" class="task-input">
                     <option value="preventiva">Preventiva</option>
                     <option value="correttiva">Correttiva</option>
-                    <option value="urgente">Urgente</option>
                   </select>
                 </label>
                 <label
@@ -189,12 +157,14 @@ type MaterialsRequestStep = 'select' | 'details';
                   </select>
                 </label>
                 <label class="field-group">
-                  <span class="field-label">Tecnico assegnato</span>
+                  <span class="field-label">Ditta assegnata</span>
                   <select formControlName="assignedTechnicianId" class="task-input">
-                    <option value="" disabled>Seleziona un tecnico</option>
-                    <option *ngFor="let tech of technicians$ | async" [value]="tech.id">
-                      {{ tech.name }} · {{ tech.team }}
-                    </option>
+                    <option value="" disabled>Seleziona ditta</option>
+                    <option value="MTU">MTU</option>
+                    <option value="ALMAVIVA">ALMAVIVA</option>
+                    <option value="TECA">TECA</option>
+                    <option value="ABB">ABB</option>
+                    <option value="KNOR">KNOR</option>
                   </select>
                 </label>
               </div>
@@ -207,280 +177,6 @@ type MaterialsRequestStep = 'select' | 'details';
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-
-        <div
-          *ngIf="isMaterialsRequestModalOpen"
-          class="modal-backdrop"
-          (click)="closeMaterialsRequestModal()"
-        >
-          <div class="modal-card" (click)="$event.stopPropagation()">
-            <div class="modal-header">
-              <div>
-                <span class="section-label">Richiesta materiali</span>
-                <p class="section-subtitle">
-                  {{
-                    materialsRequestStep === 'select'
-                      ? 'Seleziona l’intervento e i materiali da inserire nella richiesta.'
-                      : 'Completa i campi obbligatori e genera il file Excel già compilato.'
-                  }}
-                </p>
-              </div>
-              <div class="modal-actions">
-                <div *ngIf="materialsRequestExportError" class="helper-text materials-request-error">
-                  {{ materialsRequestExportError }}
-                </div>
-                <button
-                  class="btn btn-secondary btn-close"
-                  type="button"
-                  (click)="closeMaterialsRequestModal()"
-                  [disabled]="materialsRequestExportInProgress"
-                >
-                  Chiudi
-                </button>
-              </div>
-            </div>
-            <div class="task-form">
-              <ng-container *ngIf="materialsRequestStep === 'select'; else materialsRequestDetailsStep">
-                <label class="field-group">
-                  <span class="field-label">Intervento</span>
-                  <select
-                    class="task-input"
-                    [(ngModel)]="materialsRequestTaskId"
-                    [ngModelOptions]="{ standalone: true }"
-                  >
-                    <option value="" disabled>Seleziona lavorazione</option>
-                    <option *ngFor="let task of selectedOrder?.tasks" [value]="task.id">
-                      {{ task.description }}
-                    </option>
-                  </select>
-                </label>
-                <label class="field-group materials-search">
-                  <span class="field-label">Cerca materiale</span>
-                  <input
-                    type="text"
-                    class="task-input"
-                    placeholder="Descrizione o codice articolo"
-                    [(ngModel)]="materialsSearchQuery"
-                    [ngModelOptions]="{ standalone: true }"
-                    (input)="onMaterialsSearchChange()"
-                  />
-                </label>
-                <div class="materials-results">
-                  <div *ngIf="materialsLoading" class="helper-text">Caricamento elenco...</div>
-                  <div *ngIf="materialsError" class="helper-text">{{ materialsError }}</div>
-                  <div *ngIf="!materialsLoading && !materialsError">
-                    <div *ngIf="selectedMaterials.length" class="materials-selected">
-                      <div class="materials-selected-title">
-                        Selezionati ({{ selectedMaterials.length }})
-                      </div>
-                      <div class="materials-selected-list">
-                        <div
-                          *ngFor="let item of selectedMaterials"
-                          class="materials-selected-row"
-                        >
-                          <div class="materials-desc">{{ item.descrizione }}</div>
-                          <div class="materials-code">{{ item.numero_documento || '-' }}</div>
-                          <div class="materials-meta">{{ item.numero_pezzi || '-' }}</div>
-                          <div class="materials-file">
-                            <a
-                              *ngIf="item.source_pdf"
-                              [attr.href]="getMaterialFileUrl(item)"
-                              target="_blank"
-                              rel="noopener"
-                            >
-                              Apri
-                            </a>
-                            <span *ngIf="!item.source_pdf">-</span>
-                          </div>
-                          <button
-                            class="btn btn-secondary btn-remove"
-                            type="button"
-                            (click)="removeSelectedMaterial(item)"
-                          >
-                            Rimuovi
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="materials-header">
-                      <span>Descrizione</span>
-                      <span>Numero</span>
-                      <span>Pezzi</span>
-                      <span>File</span>
-                    </div>
-                    <div
-                      *ngFor="let item of materialsResults"
-                      class="materials-row"
-                      [class.selected]="isMaterialSelected(item)"
-                      (click)="toggleMaterialSelection(item)"
-                    >
-                      <div class="materials-desc">{{ item.descrizione }}</div>
-                      <div class="materials-code">{{ item.numero_documento || '-' }}</div>
-                      <div class="materials-meta">{{ item.numero_pezzi || '-' }}</div>
-                      <div class="materials-file">
-                        <a
-                          *ngIf="item.source_pdf"
-                          [attr.href]="getMaterialFileUrl(item)"
-                          target="_blank"
-                          rel="noopener"
-                          (click)="$event.stopPropagation()"
-                        >
-                          Apri
-                        </a>
-                        <span *ngIf="!item.source_pdf">-</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div class="form-actions materials-actions">
-                  <span class="helper-text">
-                    Seleziona una lavorazione e almeno un materiale per continuare.
-                  </span>
-                  <button
-                    type="button"
-                    class="btn btn-add"
-                    (click)="proceedToMaterialsRequestDetails()"
-                    [disabled]="!canProceedToMaterialsRequestDetails()"
-                  >
-                    Avanti
-                  </button>
-                </div>
-              </ng-container>
-
-              <ng-template #materialsRequestDetailsStep>
-                <div class="materials-request-summary">
-                  <div class="materials-request-summary-card">
-                    <span class="materials-request-summary-label">Intervento</span>
-                    <strong>{{ getSelectedMaterialsTaskDescription() }}</strong>
-                  </div>
-                  <div class="materials-request-summary-card">
-                    <span class="materials-request-summary-label">Materiali</span>
-                    <strong>{{ selectedMaterials.length }}</strong>
-                  </div>
-                  <div class="materials-request-summary-card">
-                    <span class="materials-request-summary-label">Treno</span>
-                    <strong>{{ selectedOrder.trainNumber }}</strong>
-                  </div>
-                </div>
-
-                <div class="materials-request-shared-row">
-                  <label class="field-group">
-                    <span class="field-label">Cassa</span>
-                    <input
-                      type="text"
-                      class="task-input"
-                      [(ngModel)]="materialsRequestSharedDraft.cassa"
-                      [ngModelOptions]="{ standalone: true }"
-                    />
-                  </label>
-                  <label class="field-group">
-                    <span class="field-label">Note</span>
-                    <input
-                      type="text"
-                      class="task-input"
-                      placeholder="Opzionale"
-                      [(ngModel)]="materialsRequestSharedDraft.note"
-                      [ngModelOptions]="{ standalone: true }"
-                    />
-                  </label>
-                </div>
-
-                <div class="materials-request-lines">
-                  <div
-                    *ngFor="let line of materialsRequestLineDrafts"
-                    class="materials-request-line"
-                  >
-                    <div class="materials-request-line-info">
-                      <div class="materials-desc">{{ line.item.descrizione }}</div>
-                      <div class="materials-line-detail">
-                        {{ line.item.numero_documento || line.item.codice_ditta_documento || line.item.codice_fs || '-' }}
-                        · Tav. {{ line.item.tavola || '-' }} · Rif. {{ line.item.riferimento || '-' }}
-                      </div>
-                    </div>
-                    <div class="materials-request-line-fields">
-                      <label class="field-group materials-inline-field">
-                        <span class="field-label">Avviso</span>
-                        <input
-                          type="text"
-                          class="task-input"
-                          [(ngModel)]="line.avviso"
-                          [ngModelOptions]="{ standalone: true }"
-                        />
-                      </label>
-                      <label class="field-group materials-inline-field">
-                        <span class="field-label">Tipo di intervento</span>
-                        <select
-                          class="task-input"
-                          [(ngModel)]="line.tipoIntervento"
-                          [ngModelOptions]="{ standalone: true }"
-                        >
-                          <option value="" disabled>Seleziona tipo</option>
-                          <option *ngFor="let option of materialsRequestTypeOptions" [value]="option">
-                            {{ option }}
-                          </option>
-                        </select>
-                      </label>
-                      <label class="field-group materials-inline-field">
-                        <span class="field-label">Guasto</span>
-                        <input
-                          type="text"
-                          class="task-input"
-                          [(ngModel)]="line.guasto"
-                          [ngModelOptions]="{ standalone: true }"
-                        />
-                      </label>
-                      <label class="field-group materials-inline-field">
-                        <span class="field-label">Q.tà</span>
-                        <input
-                          type="text"
-                          class="task-input"
-                          [(ngModel)]="line.quantity"
-                          [ngModelOptions]="{ standalone: true }"
-                        />
-                      </label>
-                      <label class="field-group materials-inline-field">
-                        <span class="field-label">UM</span>
-                        <select
-                          class="task-input"
-                          [(ngModel)]="line.um"
-                          [ngModelOptions]="{ standalone: true }"
-                        >
-                          <option value="" disabled>UM</option>
-                          <option *ngFor="let option of materialsRequestUmOptions" [value]="option">
-                            {{ option }}
-                          </option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="form-actions materials-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary"
-                    (click)="backToMaterialsRequestSelection()"
-                    [disabled]="materialsRequestExportInProgress"
-                  >
-                    Indietro
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-add"
-                    (click)="exportMaterialsRequest()"
-                    [disabled]="!canExportMaterialsRequest() || materialsRequestExportInProgress"
-                  >
-                    {{
-                      materialsRequestExportInProgress
-                        ? 'Generazione in corso...'
-                        : 'Genera file Excel'
-                    }}
-                  </button>
-                </div>
-              </ng-template>
-            </div>
           </div>
         </div>
 
@@ -553,16 +249,18 @@ type MaterialsRequestStep = 'select' | 'details';
                   </select>
                 </label>
                 <label class="task-field">
-                  <span class="task-label">Tecnico</span>
+                  <span class="task-label">Ditta</span>
                   <select
                     class="task-input"
                     [(ngModel)]="editTaskDraft.assignedTechnicianId"
                     [ngModelOptions]="{ standalone: true }"
                   >
-                    <option value="">Seleziona tecnico</option>
-                    <option *ngFor="let tech of technicianList" [value]="tech.id">
-                      {{ tech.name }}
-                    </option>
+                    <option value="">Seleziona ditta</option>
+                    <option value="MTU">MTU</option>
+                    <option value="ALMAVIVA">ALMAVIVA</option>
+                    <option value="TECA">TECA</option>
+                    <option value="ABB">ABB</option>
+                    <option value="KNOR">KNOR</option>
                   </select>
                 </label>
                 <label class="task-field">
@@ -772,6 +470,20 @@ type MaterialsRequestStep = 'select' | 'details';
 
       .btn-secondary:hover {
         transform: translateY(-1px);
+      }
+
+      .btn-success {
+        background: linear-gradient(180deg, #4ade80, #16a34a);
+        color: #021505;
+      }
+
+      .btn-success:hover:not([disabled]) {
+        transform: translateY(-1px);
+      }
+
+      .btn-success[disabled] {
+        opacity: 0.4;
+        cursor: not-allowed;
       }
 
       .btn-danger {
@@ -1053,195 +765,6 @@ type MaterialsRequestStep = 'select' | 'details';
         font-size: 12px;
       }
 
-      .materials-search {
-        margin-top: 6px;
-      }
-
-      .materials-actions {
-        margin-top: 8px;
-      }
-
-      .materials-results {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        max-height: 320px;
-        overflow: auto;
-        padding-right: 4px;
-      }
-
-      .materials-selected {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding: 10px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-      }
-
-      .materials-selected-title {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--text-secondary);
-      }
-
-      .materials-selected-list {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      .materials-selected-row {
-        display: grid;
-        grid-template-columns: 1fr 180px 120px 80px auto;
-        gap: 10px;
-        align-items: center;
-        padding: 8px 10px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.02);
-        font-size: 12px;
-      }
-
-      .materials-header {
-        display: grid;
-        grid-template-columns: 1fr 180px 120px 80px;
-        gap: 10px;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--text-secondary);
-        padding: 0 10px;
-      }
-
-      .materials-row {
-        display: grid;
-        grid-template-columns: 1fr 180px 120px 80px;
-        gap: 10px;
-        align-items: center;
-        padding: 8px 10px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.02);
-        font-size: 12px;
-        cursor: pointer;
-        transition: border-color 0.2s ease, background 0.2s ease;
-      }
-
-      .materials-row:hover {
-        border-color: rgba(255, 255, 255, 0.2);
-      }
-
-      .materials-row.selected {
-        border-color: rgba(251, 146, 60, 0.6);
-        background: rgba(251, 146, 60, 0.12);
-      }
-
-      .btn-remove {
-        height: 28px;
-        padding: 0 10px;
-        font-size: 11px;
-      }
-
-      .materials-code {
-        font-weight: 600;
-        color: var(--text-secondary);
-      }
-
-      .materials-desc {
-        color: var(--text-primary);
-      }
-
-      .materials-meta {
-        color: var(--text-secondary);
-        text-align: right;
-      }
-
-      .materials-file {
-        color: #7ab7ff;
-        text-align: right;
-      }
-
-      .materials-file a {
-        color: inherit;
-        text-decoration: underline;
-      }
-
-      .materials-request-error {
-        max-width: 280px;
-        text-align: right;
-      }
-
-      .materials-request-summary {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .materials-request-summary-card {
-        padding: 12px 14px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.03);
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .materials-request-summary-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--text-secondary);
-      }
-
-      .materials-request-shared-row {
-        display: grid;
-        grid-template-columns: 240px minmax(0, 1fr);
-        gap: 12px;
-      }
-
-      .materials-request-lines {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-
-      .materials-request-line {
-        padding: 12px 14px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.03);
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-
-      .materials-request-line-info {
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-      }
-
-      .materials-request-line-fields {
-        display: grid;
-        grid-template-columns: 140px minmax(160px, 1fr) minmax(140px, 1fr) 110px 120px;
-        gap: 10px;
-        align-items: end;
-      }
-
-      .materials-line-detail {
-        font-size: 11px;
-        color: var(--text-secondary);
-      }
-
-      .materials-inline-field {
-        margin: 0;
-      }
-
       .tasks-empty {
         padding: 16px;
         text-align: center;
@@ -1392,36 +915,6 @@ type MaterialsRequestStep = 'select' | 'details';
           margin-left: 0;
         }
 
-        .materials-row {
-          grid-template-columns: 1fr;
-          gap: 4px;
-        }
-
-        .materials-header {
-          grid-template-columns: 1fr;
-          gap: 4px;
-        }
-
-        .materials-selected-row {
-          grid-template-columns: 1fr;
-          gap: 4px;
-        }
-
-        .materials-meta {
-          text-align: left;
-        }
-
-        .materials-file {
-          text-align: left;
-        }
-
-        .materials-request-summary {
-          grid-template-columns: 1fr;
-        }
-
-        .materials-request-line-fields {
-          grid-template-columns: 1fr 1fr;
-        }
       }
 
       @media (max-width: 600px) {
@@ -1474,14 +967,6 @@ type MaterialsRequestStep = 'select' | 'details';
           padding: 16px;
         }
 
-        .materials-request-line-fields {
-          grid-template-columns: 1fr;
-        }
-
-        .materials-request-shared-row {
-          grid-template-columns: 1fr;
-        }
-
         .modal-header {
           flex-direction: column;
           align-items: flex-start;
@@ -1527,11 +1012,9 @@ type MaterialsRequestStep = 'select' | 'details';
 export class DashboardComponent implements OnInit, OnDestroy {
   newTaskForm: FormGroup;
   selectedOrder: WorkOrder | null = null;
-  technicians$: Observable<Technician[]>;
-  technicianList: Technician[] = [];
   capoturnoName = 'Capoturno';
   capoturnoSession: CapoturnoSession | null = null;
-  readonly priorityOptions: Task['priority'][] = ['preventiva', 'correttiva', 'urgente'];
+  readonly priorityOptions: Task['priority'][] = ['preventiva', 'correttiva'];
   readonly preventiveOptions = [
     { label: '2RT', fileName: '2RT.pdf' },
     { label: '4RT', fileName: '4RT.pdf' },
@@ -1569,49 +1052,27 @@ export class DashboardComponent implements OnInit, OnDestroy {
     assignedTechnicianId: '',
     status: 'aperta',
   };
-  private techniciansSub?: Subscription;
   private capoturnoSessionSub?: Subscription;
   orderCancellationInProgress = false;
+  orderClosingInProgress = false;
   isNewTaskModalOpen = false;
-  isMaterialsRequestModalOpen = false;
-  materialsLoading = false;
-  materialsError = '';
-  materialsSearchQuery = '';
-  materialsResults: MaterialItem[] = [];
-  materialsResultsCount = 0;
-  materialsRequestStep: MaterialsRequestStep = 'select';
-  materialsRequestTaskId = '';
-  materialsRequestExportInProgress = false;
-  materialsRequestExportError = '';
-  readonly materialsRequestTypeOptions = ['Garanzia', 'Extra Garanzia'];
-  readonly materialsRequestUmOptions = ['n°', 'kg', 'lt', 'mt', 'kit'];
-  materialsRequestSharedDraft: MaterialRequestSharedFields = this.createEmptyMaterialsRequestSharedDraft();
-  materialsRequestLineDrafts: MaterialRequestLineDraft[] = [];
-  private materialsCatalog: MaterialItem[] = [];
-  selectedMaterials: MaterialItem[] = [];
 
   constructor(
     private fb: FormBuilder,
     private workOrderService: WorkOrderService,
-    private technicianService: TechnicianService,
     private capoturnoSessionService: CapoturnoSessionService,
     private authService: AuthService,
-    private materialRequestExportService: MaterialRequestExportService,
   ) {
     this.newTaskForm = this.fb.group({
       description: ['', Validators.required],
-      priority: ['preventiva', Validators.required],
+      priority: ['correttiva', Validators.required],
       preventiveType: [''],
-      assignedTechnicianId: ['', Validators.required],
+      assignedTechnicianId: [''],
     });
     this.newTaskForm.get('priority')?.valueChanges.subscribe((value) => {
       if (value !== 'preventiva') {
         this.newTaskForm.get('preventiveType')?.setValue('');
       }
-    });
-    this.technicians$ = this.technicianService.getTechnicians();
-    this.techniciansSub = this.technicians$.subscribe((list) => {
-      this.technicianList = list;
     });
   }
 
@@ -1622,7 +1083,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       if (idChanged) {
         this.newTaskForm.reset({
           description: '',
-          priority: 'preventiva',
+          priority: 'correttiva',
           assignedTechnicianId: '',
         });
       }
@@ -1642,15 +1103,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.newTaskForm.get('preventiveType')?.markAsTouched();
         return;
       }
-      const technicianId = this.newTaskForm.value.assignedTechnicianId as string;
-      const technician = this.technicianList.find((tech) => tech.id === technicianId);
+      const companyName = this.newTaskForm.value.assignedTechnicianId as string;
       const taskPayload: Omit<Task, 'id' | 'status'> = {
         description: this.newTaskForm.value.description,
         priority: this.newTaskForm.value.priority,
         preventiveType: this.newTaskForm.value.preventiveType ?? undefined,
-        assignedTechnicianId: technicianId,
-        assignedTechnicianName: technician?.name ?? '',
-        assignedTechnicianNickname: technician?.nickname ?? technician?.name ?? '',
+        assignedTechnicianId: companyName,
+        assignedTechnicianName: companyName,
+        assignedTechnicianNickname: companyName,
       };
       this.workOrderService.addTask(this.selectedOrder.id, taskPayload);
       this.workOrderService.saveWorkOrders();
@@ -1670,257 +1130,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   closeNewTaskModal(): void {
     this.isNewTaskModalOpen = false;
-  }
-
-  openMaterialsRequestModal(): void {
-    this.isMaterialsRequestModalOpen = true;
-    this.resetMaterialsRequestState();
-    if (!this.materialsCatalog.length) {
-      this.loadMaterialsCatalog();
-    } else {
-      this.updateMaterialsResults();
-    }
-  }
-
-  closeMaterialsRequestModal(): void {
-    this.isMaterialsRequestModalOpen = false;
-    this.resetMaterialsRequestState();
-  }
-
-  onMaterialsSearchChange(): void {
-    this.updateMaterialsResults();
-  }
-
-  private loadMaterialsCatalog(): void {
-    this.materialsLoading = true;
-    this.materialsError = '';
-    fetch('/assets/materials/materials.json')
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Impossibile caricare il catalogo');
-        }
-        return res.json();
-      })
-      .then((data: MaterialItem[]) => {
-        this.materialsCatalog = Array.isArray(data) ? data : [];
-        this.updateMaterialsResults();
-      })
-      .catch(() => {
-        this.materialsError = 'Errore nel caricamento del catalogo materiali.';
-      })
-      .finally(() => {
-        this.materialsLoading = false;
-      });
-  }
-
-  private updateMaterialsResults(): void {
-    const query = this.materialsSearchQuery.trim().toLowerCase();
-    let results = this.materialsCatalog;
-    if (query.length >= 2) {
-      results = results.filter((item) => this.matchesMaterialQuery(item, query));
-    }
-    this.materialsResultsCount = results.length;
-    this.materialsResults = results.slice(0, 50);
-  }
-
-  private matchesMaterialQuery(item: MaterialItem, query: string): boolean {
-    const fields = [
-      item.descrizione,
-      item.codice_fs,
-      item.codice_fornitore,
-      item.codice_ditta_documento,
-      item.numero_documento,
-      item.tavola,
-      item.source_pdf,
-    ];
-    return fields.some((value) => value && value.toLowerCase().includes(query));
-  }
-
-  toggleMaterialSelection(item: MaterialItem): void {
-    const key = this.getMaterialKey(item);
-    const exists = this.selectedMaterials.find((m) => this.getMaterialKey(m) === key);
-    if (exists) {
-      this.selectedMaterials = this.selectedMaterials.filter(
-        (m) => this.getMaterialKey(m) !== key,
-      );
-    } else {
-      this.selectedMaterials = [item, ...this.selectedMaterials];
-    }
-  }
-
-  removeSelectedMaterial(item: MaterialItem): void {
-    const key = this.getMaterialKey(item);
-    this.selectedMaterials = this.selectedMaterials.filter(
-      (m) => this.getMaterialKey(m) !== key,
-    );
-    this.materialsRequestLineDrafts = this.materialsRequestLineDrafts.filter(
-      (line) => line.key !== key,
-    );
-  }
-
-  isMaterialSelected(item: MaterialItem): boolean {
-    const key = this.getMaterialKey(item);
-    return this.selectedMaterials.some((m) => this.getMaterialKey(m) === key);
-  }
-
-  private getMaterialKey(item: MaterialItem): string {
-    return [
-      item.numero_documento,
-      item.codice_fs,
-      item.codice_fornitore,
-      item.codice_ditta_documento,
-      item.descrizione,
-      item.numero_pezzi,
-      item.source_pdf,
-      item.source_page,
-    ]
-      .filter((value) => value && value.trim())
-      .join('|');
-  }
-
-  getMaterialFileUrl(item: MaterialItem): string {
-    if (!item.source_pdf) {
-      return '';
-    }
-    const encoded = encodeURIComponent(item.source_pdf);
-    const page = item.source_page?.trim();
-    const pageFragment = page ? `#page=${encodeURIComponent(page)}` : '';
-    return `/assets/materials-pdf/${encoded}${pageFragment}`;
-  }
-
-  canProceedToMaterialsRequestDetails(): boolean {
-    return Boolean(this.materialsRequestTaskId && this.selectedMaterials.length);
-  }
-
-  proceedToMaterialsRequestDetails(): void {
-    if (!this.canProceedToMaterialsRequestDetails()) {
-      this.materialsRequestExportError =
-        'Seleziona una lavorazione e almeno un materiale prima di continuare.';
-      return;
-    }
-
-    this.materialsRequestExportError = '';
-    this.materialsRequestStep = 'details';
-    this.syncMaterialsRequestLineDrafts();
-  }
-
-  backToMaterialsRequestSelection(): void {
-    this.materialsRequestExportError = '';
-    this.materialsRequestStep = 'select';
-  }
-
-  canExportMaterialsRequest(): boolean {
-    const shared = this.materialsRequestSharedDraft;
-    const sharedValid = Boolean(this.normalizeDraftValue(shared.cassa));
-
-    const linesValid =
-      this.materialsRequestLineDrafts.length > 0 &&
-      this.materialsRequestLineDrafts.every(
-        (line) =>
-          Boolean(this.normalizeDraftValue(line.avviso)) &&
-          Boolean(this.normalizeDraftValue(line.guasto)) &&
-          Boolean(this.normalizeDraftValue(line.quantity)) &&
-          Boolean(this.normalizeDraftValue(line.tipoIntervento)) &&
-          Boolean(this.normalizeDraftValue(line.um)),
-      );
-
-    return sharedValid && linesValid;
-  }
-
-  async exportMaterialsRequest(): Promise<void> {
-    if (!this.selectedOrder || !this.canExportMaterialsRequest()) {
-      this.materialsRequestExportError =
-        'Compila tutti i campi obbligatori prima di generare il file Excel.';
-      return;
-    }
-
-    const lines = this.materialsRequestLineDrafts.reduce<Record<string, MaterialRequestLineFields>>(
-      (accumulator, line) => {
-        accumulator[line.key] = {
-          avviso: this.normalizeDraftValue(line.avviso),
-          guasto: this.normalizeDraftValue(line.guasto),
-          tipoIntervento: this.normalizeDraftValue(line.tipoIntervento),
-          quantity: this.normalizeDraftValue(line.quantity),
-          um: this.normalizeDraftValue(line.um),
-        };
-        return accumulator;
-      },
-      {},
-    );
-
-    this.materialsRequestExportInProgress = true;
-    this.materialsRequestExportError = '';
-
-    try {
-      await this.materialRequestExportService.exportRequest({
-        order: this.selectedOrder,
-        materials: this.selectedMaterials,
-        shared: {
-          cassa: this.normalizeDraftValue(this.materialsRequestSharedDraft.cassa),
-          note: this.normalizeDraftValue(this.materialsRequestSharedDraft.note),
-        },
-        lines,
-      });
-      this.closeMaterialsRequestModal();
-    } catch (error) {
-      console.error(error);
-      const detail = error instanceof Error ? error.message : String(error);
-      this.materialsRequestExportError = `Errore: ${detail}`;
-    } finally {
-      this.materialsRequestExportInProgress = false;
-    }
-  }
-
-  getSelectedMaterialsTaskDescription(): string {
-    return (
-      this.selectedOrder?.tasks.find((task) => task.id === this.materialsRequestTaskId)?.description ||
-      '-'
-    );
-  }
-
-  private resetMaterialsRequestState(): void {
-    this.materialsRequestStep = 'select';
-    this.materialsRequestTaskId = '';
-    this.materialsSearchQuery = '';
-    this.materialsRequestExportInProgress = false;
-    this.materialsRequestExportError = '';
-    this.materialsRequestSharedDraft = this.createEmptyMaterialsRequestSharedDraft();
-    this.materialsRequestLineDrafts = [];
-    this.selectedMaterials = [];
-  }
-
-  private createEmptyMaterialsRequestSharedDraft(): MaterialRequestSharedFields {
-    return {
-      cassa: '',
-      note: '',
-    };
-  }
-
-  private syncMaterialsRequestLineDrafts(): void {
-    const existing = new Map(
-      this.materialsRequestLineDrafts.map((line) => [line.key, line]),
-    );
-
-    this.materialsRequestLineDrafts = this.selectedMaterials.map((item) => {
-      const key = this.getMaterialKey(item);
-      const current = existing.get(key);
-      return {
-        item,
-        key,
-        avviso: current?.avviso ?? '',
-        guasto: current?.guasto ?? '',
-        quantity: current?.quantity ?? '',
-        tipoIntervento: current?.tipoIntervento ?? '',
-        um: current?.um ?? '',
-      };
-    });
-  }
-
-  private normalizeDraftValue(value: unknown): string {
-    if (value === null || value === undefined) {
-      return '';
-    }
-    return String(value).trim();
   }
 
   openPreventiveFile(type: string): void {
@@ -1948,17 +1157,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (!this.selectedOrder) {
       return;
     }
-    const technician = this.technicianList.find(
-      (tech) => tech.id === this.editTaskDraft.assignedTechnicianId,
-    );
+    const companyName = this.editTaskDraft.assignedTechnicianId;
     const normalizedStatus = this.normalizeTaskStatus(this.editTaskDraft.status);
     this.workOrderService.updateTask(this.selectedOrder.id, task.id, {
       description: this.editTaskDraft.description,
       priority: this.editTaskDraft.priority,
       status: normalizedStatus,
-      assignedTechnicianId: this.editTaskDraft.assignedTechnicianId,
-      assignedTechnicianName: technician?.name ?? '',
-      assignedTechnicianNickname: technician?.nickname ?? technician?.name ?? '',
+      assignedTechnicianId: companyName,
+      assignedTechnicianName: companyName,
+      assignedTechnicianNickname: companyName,
     });
     this.editingTaskId = null;
   }
@@ -2005,7 +1212,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.techniciansSub?.unsubscribe();
     this.capoturnoSessionSub?.unsubscribe();
   }
 
@@ -2056,6 +1262,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
           window.alert('Password errata. Annullamento non eseguito.');
         },
       });
+  }
+
+  closeWorkOrder(): void {
+    if (!this.selectedOrder || this.getCompletionRate() < 100) return;
+    const confirmed = window.confirm(
+      `Sei sicuro di voler chiudere l'ordine ${this.selectedOrder.codiceODL}?`,
+    );
+    if (!confirmed) return;
+    this.orderClosingInProgress = true;
+    this.workOrderService.completeWorkOrder(this.selectedOrder.id).subscribe({
+      next: () => { this.orderClosingInProgress = false; },
+      error: () => {
+        this.orderClosingInProgress = false;
+        window.alert("Impossibile chiudere l'ODL. Riprova.");
+      },
+    });
   }
 
   canCancelOrder(): boolean {

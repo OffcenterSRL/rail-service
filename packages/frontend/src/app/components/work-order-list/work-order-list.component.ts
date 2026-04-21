@@ -66,14 +66,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
             [(ngModel)]="searchTerm"
             (ngModelChange)="updateSearchTerm($event)"
           />
-          <label class="completed-toggle">
-            <input
-              type="checkbox"
-              [checked]="showCompletedOrders"
-              (change)="toggleShowCompletedOrders($any($event.target).checked)"
-            />
-            <span>Mostra ODL completati</span>
-          </label>
         </div>
 
         <div *ngIf="workOrders.length > 0; else emptyState" class="orders-list">
@@ -167,21 +159,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
         border-radius: 12px;
         padding: 10px 14px;
         font-size: 13px;
-      }
-
-      .completed-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--text-secondary);
-      }
-
-      .completed-toggle input {
-        width: 16px;
-        height: 16px;
       }
 
       .btn-inserisci {
@@ -523,10 +500,6 @@ import { Technician, TechnicianService } from '../../services/technician.service
           width: 100%;
         }
 
-        .completed-toggle {
-          width: 100%;
-        }
-
         .modal-footer {
           flex-direction: column;
         }
@@ -557,13 +530,11 @@ export class WorkOrderListComponent implements OnInit {
   openedAtDate = '';
   openedAtTime = '';
   searchTerm = '';
-  showCompletedOrders = false;
   private selectedWorkOrder: WorkOrder | null = null;
   private workOrderService = inject(WorkOrderService);
   private technicianService = inject(TechnicianService);
   private capoturnoSessionService = inject(CapoturnoSessionService);
   private readonly searchTerm$ = new BehaviorSubject('');
-  private readonly showCompleted$ = new BehaviorSubject(false);
 
   constructor() {
     this.workOrders$ = this.workOrderService.getWorkOrders();
@@ -571,11 +542,8 @@ export class WorkOrderListComponent implements OnInit {
     this.filteredWorkOrders$ = combineLatest([
       this.workOrders$,
       this.searchTerm$,
-      this.showCompleted$,
     ]).pipe(
-      map(([orders, searchValue, showCompleted]) =>
-        this.filterOrders(orders, searchValue, showCompleted),
-      ),
+      map(([orders, searchValue]) => this.filterOrders(orders, searchValue)),
     );
     this.capoturnoSessionService.getSession().subscribe((session) => {
       this.capoturnoSession = session;
@@ -667,11 +635,6 @@ export class WorkOrderListComponent implements OnInit {
     this.searchTerm$.next(value);
   }
 
-  toggleShowCompletedOrders(show: boolean): void {
-    this.showCompletedOrders = show;
-    this.showCompleted$.next(show);
-  }
-
   private sortTrainNumber(a: string, b: string): number {
     const parse = (s: string) => {
       if (!s) return { series: 0, unit: 0 };
@@ -685,30 +648,17 @@ export class WorkOrderListComponent implements OnInit {
     return pa.unit - pb.unit;
   }
 
-  private filterOrders(
-    orders: WorkOrder[],
-    searchValue: string,
-    showCompleted: boolean,
-  ): WorkOrder[] {
+  private filterOrders(orders: WorkOrder[], searchValue: string): WorkOrder[] {
     const normalized = searchValue.trim().toLowerCase();
     return orders
       .filter((order) => {
-        const matchesSearch =
+        if (order.status === 'completed' || order.status === 'cancelled') return false;
+        return (
           !normalized ||
           order.trainNumber.toLowerCase().includes(normalized) ||
           order.codiceODL.toLowerCase().includes(normalized) ||
-          order.shift.toLowerCase().includes(normalized);
-        if (!matchesSearch) {
-          return false;
-        }
-        const isHidden = order.status === 'completed' || order.status === 'cancelled';
-        if (showCompleted) {
-          return true;
-        }
-        if (normalized) {
-          return true;
-        }
-        return !isHidden;
+          order.shift.toLowerCase().includes(normalized)
+        );
       })
       .sort((a, b) => {
         const byTrain = this.sortTrainNumber(a.trainNumber, b.trainNumber);

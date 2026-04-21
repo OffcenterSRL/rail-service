@@ -82,6 +82,12 @@ export class TicketService {
       .pipe(map((response) => response.data));
   }
 
+  completeTicket(ticketId: string): Observable<TicketRecord> {
+    return this.http
+      .patch<{ data: TicketRecord }>(`${API_BASE_URL}/tickets/${ticketId}/complete`, {})
+      .pipe(map((response) => response.data));
+  }
+
   addTask(ticketId: string, task: TaskPayload): Observable<TicketRecord> {
     return this.http
       .post<{ data: TicketRecord }>(`${API_BASE_URL}/tickets/${ticketId}/tasks`, task)

@@ -56,6 +56,18 @@ export const cancelTicket = async (req: Request, res: Response) => {
   }
 };
 
+export const completeTicket = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const ticket = await Ticket.findByIdAndUpdate(id, { status: 'completed' }, { new: true }).lean();
+    if (!ticket) return res.status(404).json({ error: 'Ordine non trovato' });
+    return res.json({ data: ticket });
+  } catch (error) {
+    console.warn('⚠️ Impossibile completare il ticket:', (error as Error).message);
+    return res.status(500).json({ error: 'Completamento ordine fallito' });
+  }
+};
+
 export const addTask = async (req: Request, res: Response) => {
   const { id } = req.params;
   const {

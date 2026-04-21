@@ -136,6 +136,26 @@ export class WorkOrderService implements OnDestroy {
     );
   }
 
+  completeWorkOrder(workOrderId: string): Observable<WorkOrder> {
+    return this.ticketService.completeTicket(workOrderId).pipe(
+      map((ticket) => {
+        const updated = this.mapTicketToWorkOrder(ticket);
+        const nextList = this.upsertInPlace(this.workOrders$.value, updated);
+        this.workOrders$.next(nextList);
+        if (this.selectedWorkOrder$.value?.id === updated.id) {
+          const nextActive =
+            nextList.find(
+              (o) => o.id !== updated.id && o.status !== 'completed' && o.status !== 'cancelled',
+            ) ?? null;
+          this.selectWorkOrder(nextActive);
+        } else {
+          this.ensureSelection(nextList);
+        }
+        return updated;
+      }),
+    );
+  }
+
   addTask(workOrderId: string, task: Omit<Task, 'id' | 'status'>): void {
     if (!workOrderId) return;
     const payload: TaskPayload = {

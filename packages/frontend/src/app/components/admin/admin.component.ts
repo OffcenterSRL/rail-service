@@ -7,8 +7,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
-import { forkJoin } from 'rxjs';
-import { AdminConfigService, CapoturnoConfig, TechnicianConfig } from '../../services/admin-config.service';
+import { AdminConfigService, CapoturnoConfig } from '../../services/admin-config.service';
 
 @Component({
   selector: 'app-admin',
@@ -19,9 +18,9 @@ import { AdminConfigService, CapoturnoConfig, TechnicianConfig } from '../../ser
       <header class="admin-header">
         <div>
           <p class="admin-label">Pannello amministratore</p>
-          <h1>Gestione tecnici e capoturni</h1>
+          <h1>Gestione capoturni</h1>
           <p class="admin-subtitle">
-            Proteggi e aggiorna la lista di tecnici e capoturni attivi via password.
+            Proteggi e aggiorna la lista di capoturni attivi via password.
           </p>
         </div>
         <div class="admin-status" [class.unlocked]="configUnlocked">
@@ -53,48 +52,6 @@ import { AdminConfigService, CapoturnoConfig, TechnicianConfig } from '../../ser
 
         <p *ngIf="configError" class="config-feedback error">{{ configError }}</p>
         <p *ngIf="configSuccess" class="config-feedback success">{{ configSuccess }}</p>
-
-        <section *ngIf="configUnlocked" class="technicians-section">
-          <h3 class="section-title">Tecnici</h3>
-          <div formArrayName="technicians" class="technicians-grid">
-            <div
-              *ngFor="let techCtrl of techniciansArray.controls; let i = index"
-              [formGroupName]="i"
-              class="technician-card"
-            >
-              <div class="technician-card-fields">
-                <input formControlName="name" placeholder="Nome tecnico" class="task-input" />
-                <input formControlName="nickname" placeholder="Nickname" class="task-input" />
-                <input formControlName="matricola" placeholder="Matricola" class="task-input" />
-                <input formControlName="team" placeholder="Team" class="task-input" />
-              </div>
-              <div class="technician-card-actions">
-                <button
-                  type="button"
-                  class="btn btn-tertiary"
-                  (click)="removeTechnician(i)"
-                  [disabled]="isRowDeleting(i)"
-                >
-                  {{ isRowDeleting(i) ? 'Rimuovendo...' : 'Rimuovi' }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-add"
-                  (click)="saveTechnicianRow(i)"
-                  [disabled]="isRowSaving(i) || techCtrl.invalid"
-                >
-                  {{ isRowSaving(i) ? 'Salvataggio...' : 'Salva' }}
-                </button>
-              </div>
-            </div>
-            <div *ngIf="techniciansArray.length === 0" class="technicians-empty">
-              <p>Nessun tecnico configurato. Aggiungine uno per iniziare.</p>
-            </div>
-          </div>
-          <div class="config-form-actions">
-            <button type="button" class="btn btn-ghost" (click)="addTechnicianRow()">Aggiungi tecnico</button>
-          </div>
-        </section>
 
         <section *ngIf="configUnlocked" class="technicians-section">
           <h3 class="section-title">Capoturni</h3>
@@ -402,8 +359,6 @@ export class AdminComponent implements OnInit {
   configError: string | null = null;
   configSuccess: string | null = null;
   private currentAdminPassword: string | null = null;
-  rowSaving: Record<number, boolean> = {};
-  rowDeleting: Record<number, boolean> = {};
   capoturnoRowSaving: Record<number, boolean> = {};
   capoturnoRowDeleting: Record<number, boolean> = {};
   storedPassword: string | null = null;
@@ -412,7 +367,6 @@ export class AdminComponent implements OnInit {
   constructor(private fb: FormBuilder, private adminConfigService: AdminConfigService) {
     this.adminForm = this.fb.group({
       password: ['', Validators.required],
-      technicians: this.fb.array([]),
       capoturni: this.fb.array([]),
     });
   }
@@ -422,10 +376,6 @@ export class AdminComponent implements OnInit {
     if (this.storedPassword) {
       this.adminForm.get('password')?.setValue(this.storedPassword);
     }
-  }
-
-  get techniciansArray(): FormArray {
-    return this.adminForm.get('technicians') as FormArray;
   }
 
   get capoturniArray(): FormArray {
@@ -441,18 +391,14 @@ export class AdminComponent implements OnInit {
     }
 
     this.configLoading = true;
-    forkJoin({
-      technicians: this.adminConfigService.getTechnicians(password),
-      capoturni: this.adminConfigService.getCapoturni(password),
-    }).subscribe({
-      next: ({ technicians, capoturni }) => {
+    this.adminConfigService.getCapoturni(password).subscribe({
+      next: (capoturni) => {
         this.configUnlocked = true;
         this.configError = null;
-        this.configSuccess = 'Liste tecnici e capoturni caricate';
+        this.configSuccess = 'Lista capoturni caricata';
         this.currentAdminPassword = password;
         this.persistStoredPassword(password);
         this.storedPassword = password;
-        this.setTechnicians(technicians);
         this.setCapoturni(capoturni);
         this.configLoading = false;
       },
@@ -462,7 +408,6 @@ export class AdminComponent implements OnInit {
         this.configError = error?.error?.error ?? 'Password errata';
         this.configSuccess = null;
         this.currentAdminPassword = null;
-        this.clearTechnicians();
         this.clearCapoturni();
       },
     });
@@ -476,59 +421,13 @@ export class AdminComponent implements OnInit {
     this.configSuccess = 'Password rimossa dalla memoria';
     this.configError = null;
     this.configUnlocked = false;
-    this.clearTechnicians();
     this.clearCapoturni();
-    this.rowSaving = {};
-    this.rowDeleting = {};
     this.capoturnoRowSaving = {};
     this.capoturnoRowDeleting = {};
   }
 
-  addTechnicianRow(): void {
-    this.techniciansArray.push(this.createTechnicianGroup());
-  }
-
   addCapoturnoRow(): void {
     this.capoturniArray.push(this.createCapoturnoGroup());
-  }
-
-  removeTechnician(index: number): void {
-    const control = this.techniciansArray.at(index);
-    if (!control) {
-      return;
-    }
-    const name = control.get('name')?.value ?? 'questo tecnico';
-    const confirmed = window.confirm(`Confermi la rimozione di ${name}?`);
-    if (!confirmed) {
-      return;
-    }
-    const technicianId = control.get('id')?.value;
-    if (!technicianId) {
-      this.techniciansArray.removeAt(index);
-      return;
-    }
-
-    const password = this.currentAdminPassword;
-    if (!password) {
-      this.configError = 'Password amministratore non valida.';
-      this.configSuccess = null;
-      return;
-    }
-
-    this.setRowDeleting(index, true);
-    this.adminConfigService.deleteTechnician(password, technicianId).subscribe({
-      next: (updated) => {
-        this.configSuccess = 'Tecnico rimosso';
-        this.configError = null;
-        this.setTechnicians(updated);
-        this.setRowDeleting(index, false);
-      },
-      error: (error) => {
-        this.configError = error?.error?.error ?? 'Errore durante la rimozione';
-        this.configSuccess = null;
-        this.setRowDeleting(index, false);
-      },
-    });
   }
 
   removeCapoturno(index: number): void {
@@ -570,39 +469,6 @@ export class AdminComponent implements OnInit {
     });
   }
 
-  saveTechnicianRow(index: number): void {
-    const control = this.techniciansArray.at(index);
-    if (!control) {
-      return;
-    }
-    const password = this.currentAdminPassword;
-    if (!password) {
-      this.configError = 'Password amministratore non valida.';
-      this.configSuccess = null;
-      return;
-    }
-    if (control.invalid) {
-      control.markAllAsTouched();
-      return;
-    }
-
-    const technician = control.value as TechnicianConfig;
-    this.setRowSaving(index, true);
-    this.adminConfigService.saveTechnician(password, technician).subscribe({
-      next: (saved) => {
-        control.patchValue(saved);
-        this.configSuccess = `Tecnico ${saved.name} salvato`;
-        this.configError = null;
-        this.setRowSaving(index, false);
-      },
-      error: (error) => {
-        this.configError = error?.error?.error ?? 'Errore durante il salvataggio';
-        this.configSuccess = null;
-        this.setRowSaving(index, false);
-      },
-    });
-  }
-
   saveCapoturnoRow(index: number): void {
     const control = this.capoturniArray.at(index);
     if (!control) {
@@ -636,16 +502,6 @@ export class AdminComponent implements OnInit {
     });
   }
 
-  private createTechnicianGroup(tech?: TechnicianConfig): FormGroup {
-    return this.fb.group({
-      id: [tech?.id ?? ''],
-      name: [tech?.name ?? '', Validators.required],
-      nickname: [tech?.nickname ?? '', Validators.required],
-      matricola: [tech?.matricola ?? '', Validators.required],
-      team: [tech?.team ?? '', Validators.required],
-    });
-  }
-
   private createCapoturnoGroup(capo?: CapoturnoConfig): FormGroup {
     return this.fb.group({
       id: [capo?.id ?? ''],
@@ -655,20 +511,9 @@ export class AdminComponent implements OnInit {
     });
   }
 
-  private setTechnicians(list: TechnicianConfig[]): void {
-    this.clearTechnicians();
-    list.forEach((tech) => this.techniciansArray.push(this.createTechnicianGroup(tech)));
-  }
-
   private setCapoturni(list: CapoturnoConfig[]): void {
     this.clearCapoturni();
     list.forEach((capo) => this.capoturniArray.push(this.createCapoturnoGroup(capo)));
-  }
-
-  private clearTechnicians(): void {
-    while (this.techniciansArray.length) {
-      this.techniciansArray.removeAt(0);
-    }
   }
 
   private clearCapoturni(): void {
@@ -707,38 +552,12 @@ export class AdminComponent implements OnInit {
     this.persistStoredPassword(null);
   }
 
-  isRowSaving(index: number): boolean {
-    return !!this.rowSaving[index];
-  }
-
-  isRowDeleting(index: number): boolean {
-    return !!this.rowDeleting[index];
-  }
-
   isCapoturnoRowSaving(index: number): boolean {
     return !!this.capoturnoRowSaving[index];
   }
 
   isCapoturnoRowDeleting(index: number): boolean {
     return !!this.capoturnoRowDeleting[index];
-  }
-
-  private setRowSaving(index: number, saving: boolean): void {
-    if (saving) {
-      this.rowSaving = { ...this.rowSaving, [index]: true };
-      return;
-    }
-    const { [index]: _, ...rest } = this.rowSaving;
-    this.rowSaving = rest;
-  }
-
-  private setRowDeleting(index: number, deleting: boolean): void {
-    if (deleting) {
-      this.rowDeleting = { ...this.rowDeleting, [index]: true };
-      return;
-    }
-    const { [index]: _, ...rest } = this.rowDeleting;
-    this.rowDeleting = rest;
   }
 
   private setCapoturnoRowSaving(index: number, saving: boolean): void {

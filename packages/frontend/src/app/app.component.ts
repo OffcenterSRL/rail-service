@@ -6,24 +6,13 @@ import { Router, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { APP_VERSION } from './app-version';
 import { AdminComponent } from './components/admin/admin.component';
+import { FlottaToscanaPageComponent } from './components/flotta-toscana/flotta-toscana-page.component';
+import { MaterialsRequestPageComponent } from './components/materials-request/materials-request-page.component';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
-import { AuthService, CapoturnoSession, TechnicianSession } from './services/auth.service';
+import { AuthService, CapoturnoSession } from './services/auth.service';
 import { CapoturnoSessionService } from './services/capoturno-session.service';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
 import { Task, WorkOrder, WorkOrderService } from './services/work-order.service';
-import { Technician, TechnicianService } from './services/technician.service';
-
-type AssignedTask = {
-  description: string;
-  priority: Task['priority'];
-  status: Task['status'];
-  orderCode: string;
-  trainNumber: string;
-  orderId: string;
-  taskId: string;
-  performedBy?: Task['performedBy'];
-  timeSpentMinutes?: number;
-};
 
 @Component({
   selector: 'app-root',
@@ -35,6 +24,8 @@ type AssignedTask = {
     RouterOutlet,
     WorkOrderListComponent,
     AdminComponent,
+    MaterialsRequestPageComponent,
+    FlottaToscanaPageComponent,
   ],
   template: `
     <div class="app-shell">
@@ -55,13 +46,6 @@ type AssignedTask = {
               </button>
               <button
                 class="view-btn"
-                [class.active]="viewMode === 'tecnico'"
-                (click)="setView('tecnico')"
-              >
-                Tecnico
-              </button>
-              <button
-                class="view-btn"
                 [class.active]="viewMode === 'admin'"
                 (click)="setView('admin')"
               >
@@ -76,19 +60,11 @@ type AssignedTask = {
             >
               Esci
             </button>
-            <button
-              *ngIf="viewMode === 'tecnico' && technicianSession"
-              class="logout-btn"
-              type="button"
-              (click)="logoutTechnician()"
-            >
-              Esci
-            </button>
           </div>
         </div>
       </header>
 
-      <section class="hero-strip" *ngIf="viewMode !== 'tecnico' && !(viewMode === 'capoturno' && !capoturnoSession)">
+      <section class="hero-strip" *ngIf="!(viewMode === 'capoturno' && !capoturnoSession)">
         <div class="hero-strip-top">
             <div class="hero-copy">
               <p class="hero-label">Dashboard Operativa</p>
@@ -134,17 +110,97 @@ type AssignedTask = {
         <ng-container [ngSwitch]="viewMode">
           <ng-container *ngSwitchCase="'capoturno'">
             <ng-container *ngIf="capoturnoSession; else capoturnoLogin">
-              <aside class="sidebar">
-                <div class="sidebar-content">
-                  <div class="assigned-header">
-                    <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
+              <!-- Collapsible nav sidebar -->
+              <div class="nav-sidebar">
+                <div class="nav-sidebar-inner">
+                  <div class="nav-item" [class.active]="capoturnoSection === 'ordini'" (click)="setCapoturnoSection('ordini')" title="Ordini di lavoro">
+                    <span class="nav-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                        <rect x="9" y="3" width="6" height="4" rx="2"/>
+                        <line x1="9" y1="12" x2="15" y2="12"/>
+                        <line x1="9" y1="16" x2="13" y2="16"/>
+                      </svg>
+                    </span>
+                    <span class="nav-label">Ordini di lavoro</span>
                   </div>
-                  <app-work-order-list></app-work-order-list>
+                  <div class="nav-item" [class.active]="capoturnoSection === 'flotta'" (click)="setCapoturnoSection('flotta')" title="Flotta Toscana">
+                    <span class="nav-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="1" y="6" width="22" height="12" rx="3"/>
+                        <path d="M1 12h22"/>
+                        <circle cx="6" cy="18" r="2"/>
+                        <circle cx="18" cy="18" r="2"/>
+                        <path d="M6 6V4"/>
+                        <path d="M18 6V4"/>
+                        <path d="M4 18h2M18 18h2"/>
+                        <path d="M9 9h6"/>
+                      </svg>
+                    </span>
+                    <span class="nav-label">Flotta Toscana</span>
+                  </div>
+                  <div class="nav-item" [class.active]="capoturnoSection === 'materiali'" (click)="setCapoturnoSection('materiali')" title="Richieste materiali">
+                    <span class="nav-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                        <line x1="12" y1="22.08" x2="12" y2="12"/>
+                      </svg>
+                    </span>
+                    <span class="nav-label">Richieste materiali</span>
+                  </div>
+                  <div class="nav-item" [class.active]="capoturnoSection === 'ti'" (click)="setCapoturnoSection('ti')" title="Richieste TI">
+                    <span class="nav-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                        <line x1="8" y1="21" x2="16" y2="21"/>
+                        <line x1="12" y1="17" x2="12" y2="21"/>
+                      </svg>
+                    </span>
+                    <span class="nav-label">Richieste TI</span>
+                  </div>
+                  <div class="nav-item" [class.active]="capoturnoSection === 'scadenze'" (click)="setCapoturnoSection('scadenze')" title="Scadenze">
+                    <span class="nav-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                      </svg>
+                    </span>
+                    <span class="nav-label">Scadenze</span>
+                  </div>
                 </div>
-              </aside>
-              <main class="main-content">
-                <router-outlet></router-outlet>
-              </main>
+              </div>
+
+              <!-- Section content -->
+              <ng-container [ngSwitch]="capoturnoSection">
+                <ng-container *ngSwitchCase="'ordini'">
+                  <aside class="sidebar">
+                    <div class="sidebar-content">
+                      <div class="assigned-header">
+                        <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
+                      </div>
+                      <app-work-order-list></app-work-order-list>
+                    </div>
+                  </aside>
+                  <main class="main-content">
+                    <router-outlet></router-outlet>
+                  </main>
+                </ng-container>
+                <app-flotta-toscana-page *ngSwitchCase="'flotta'"></app-flotta-toscana-page>
+                <app-materials-request-page *ngSwitchCase="'materiali'"></app-materials-request-page>
+                <div *ngSwitchCase="'ti'" class="section-placeholder">
+                  <div class="placeholder-icon">🖥️</div>
+                  <p class="placeholder-title">Richieste TI</p>
+                  <p class="placeholder-subtitle">Sezione in sviluppo</p>
+                </div>
+                <div *ngSwitchCase="'scadenze'" class="section-placeholder">
+                  <div class="placeholder-icon">📅</div>
+                  <p class="placeholder-title">Scadenze</p>
+                  <p class="placeholder-subtitle">Sezione in sviluppo</p>
+                </div>
+              </ng-container>
             </ng-container>
             <ng-template #capoturnoLogin>
               <div class="tecnico-panel">
@@ -185,146 +241,6 @@ type AssignedTask = {
                 </div>
               </div>
             </ng-template>
-          </ng-container>
-
-          <ng-container *ngSwitchCase="'tecnico'">
-            <div class="tecnico-panel">
-              <div class="panel-shell">
-                <div class="panel-heading">
-                  <h2>Login Tecnico</h2>
-                  <span class="panel-subtitle"
-                    >Accedi con nickname e matricola per vedere le tue
-                    lavorazioni.</span
-                  >
-                </div>
-                <p
-                  *ngIf="loginState"
-                  class="login-message"
-                  [class.success]="loginState.type === 'success'"
-                  [class.error]="loginState.type === 'error'"
-                >
-                  {{ loginState.message }}
-                </p>
-                <ng-container *ngIf="!technicianSession">
-                  <div class="field">
-                    <label>Nickname</label>
-                    <input
-                      type="text"
-                      [(ngModel)]="tecNickname"
-                      placeholder="es. Carlo"
-                    />
-                  </div>
-                  <div class="field">
-                    <label>Matricola</label>
-                    <input
-                      type="text"
-                      [(ngModel)]="tecMatricola"
-                      placeholder="123456"
-                    />
-                  </div>
-                  <button class="btn btn-primary" (click)="loginTechnician()">
-                    Accedi come tecnico
-                  </button>
-                </ng-container>
-                <div *ngIf="technicianSession" class="assigned-tasks">
-                  <div class="assigned-header">
-                    <h3>Lavorazioni per {{ technicianSession.nickname }}</h3>
-                    <div class="assigned-actions">
-                    </div>
-                  </div>
-                  <div class="assigned-controls">
-                    <input
-                      type="search"
-                      [(ngModel)]="searchTerm"
-                      (ngModelChange)="updateSearchTerm($event)"
-                      placeholder="Cerca lavorazioni, treno o codice"
-                    />
-                  </div>
-                  <div *ngIf="assignedTasks.length === 0" class="task-empty">
-                    <p>Nessuna lavorazione assegnata per il momento.</p>
-                  </div>
-                  <div
-                    *ngFor="let item of assignedTasks"
-                    class="assigned-task"
-                    [class.active]="selectedTask?.taskId === item.taskId"
-                    (click)="openTaskCompilation(item)"
-                  >
-                    <div class="assigned-task-header">
-                      <span class="task-order"
-                        >{{ item.orderCode }} · {{ item.trainNumber }}</span
-                      >
-                      <span class="task-status-pill">{{
-                        item.status | uppercase
-                      }}</span>
-                    </div>
-                    <p class="task-description">{{ item.description }}</p>
-                    <span class="task-priority" [ngClass]="item.priority">{{
-                      item.priority | titlecase
-                    }}</span>
-                  </div>
-                  <div *ngIf="selectedTask" class="task-compile-card">
-                  <div class="compile-header" *ngIf="selectedTask as currentTask">
-                    <h4>Compila lavorazione</h4>
-                      <span>{{ currentTask.orderCode }} · {{ currentTask.trainNumber }}</span>
-                    <span class="status-pill" [ngClass]="currentTask.status">
-                      {{ taskStatusLabel(currentTask.status) }}
-                    </span>
-                  </div>
-                    <label class="compile-field">
-                      <span>Stato lavorazione</span>
-                      <select [(ngModel)]="taskStatus">
-                        <option value="aperta">Aperta</option>
-                        <option value="in_progress">In corso</option>
-                        <option value="rimandato">Rimandato</option>
-                        <option value="risolte">Completato</option>
-                      </select>
-                    </label>
-                    <label class="compile-field">
-                      <span>Tempo totale</span>
-                      <div class="compile-time">
-                        <select [(ngModel)]="taskTimeSpentHours">
-                          <option *ngFor="let hour of timeHoursOptions" [value]="hour">
-                            {{ hour }} h
-                          </option>
-                        </select>
-                        <select [(ngModel)]="taskTimeSpentMinutes">
-                          <option *ngFor="let minute of timeMinutesOptions" [value]="minute">
-                            {{ minute }} min
-                          </option>
-                        </select>
-                      </div>
-                    </label>
-                    <div class="compile-technicians">
-                      <div
-                        *ngFor="let row of taskTechnicians; let i = index"
-                        class="compile-tech-row"
-                      >
-                        <select [(ngModel)]="row.technicianId">
-                          <option value="">Seleziona tecnico</option>
-                          <option *ngFor="let tech of technicianList" [value]="tech.id">
-                            {{ tech.name }}
-                          </option>
-                        </select>
-                        <span class="tech-matricola">{{
-                          getTechnicianMatricola(row.technicianId)
-                        }}</span>
-                        <button type="button" class="btn btn-tertiary" (click)="removeTechnicianRow(i)">
-                          Rimuovi
-                        </button>
-                      </div>
-                      <button type="button" class="btn btn-tertiary" (click)="addTechnicianRow()">
-                        Aggiungi tecnico
-                      </button>
-                    </div>
-                    <div class="compile-actions">
-                      <button class="btn btn-primary" type="button" (click)="saveTaskCompilation()">
-                        Salva compilazione
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </ng-container>
 
           <ng-container *ngSwitchCase="'admin'">
@@ -902,6 +818,127 @@ type AssignedTask = {
         width: 100%;
       }
 
+      /* ── Collapsible nav sidebar ── */
+      .nav-sidebar {
+        flex-shrink: 0;
+        width: 60px;
+        position: relative;
+        align-self: stretch;
+        z-index: 20;
+      }
+
+      .nav-sidebar-inner {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 60px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 0;
+        gap: 2px;
+        overflow: hidden;
+        transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(18px) saturate(160%);
+        -webkit-backdrop-filter: blur(18px) saturate(160%);
+      }
+
+      .nav-sidebar-inner:hover {
+        width: 220px;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 18px;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.35);
+        transition: color 0.15s ease;
+        white-space: nowrap;
+        border-radius: 0;
+        user-select: none;
+      }
+
+      .nav-item:hover {
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      .nav-item.active {
+        color: rgba(255, 255, 255, 0.4);
+      }
+
+      .nav-item.active .nav-icon {
+        color: #7bc7ff;
+        filter: drop-shadow(0 0 6px rgba(123, 199, 255, 0.55));
+      }
+
+      .nav-icon {
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .nav-icon svg {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
+
+      .nav-label {
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.3px;
+        opacity: 0;
+        transition: opacity 0.12s ease 0.08s;
+        pointer-events: none;
+      }
+
+      .nav-sidebar-inner:hover .nav-label {
+        opacity: 1;
+      }
+
+      /* ── Section placeholder ── */
+      .section-placeholder {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: rgba(9, 13, 26, 0.92);
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: var(--glass-shadow);
+      }
+
+      .placeholder-icon {
+        font-size: 52px;
+        opacity: 0.35;
+        line-height: 1;
+      }
+
+      .placeholder-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+      }
+
+      .placeholder-subtitle {
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin: 0;
+        letter-spacing: 0.3px;
+      }
+
       .sidebar {
         width: 320px;
         background: rgba(17, 22, 35, 0.85);
@@ -1145,19 +1182,9 @@ type AssignedTask = {
   ],
 })
 export class AppComponent implements OnInit, OnDestroy {
-  viewMode: 'capoturno' | 'tecnico' | 'admin' = 'capoturno';
-  tecNickname = '';
-  tecMatricola = '';
-  loginState: { type: 'success' | 'error'; message: string } | null = null;
-  technicianSession: TechnicianSession | null = null;
+  viewMode: 'capoturno' | 'admin' = 'capoturno';
+  capoturnoSection: 'ordini' | 'materiali' | 'ti' | 'scadenze' | 'flotta' = 'ordini';
   capoturnoSession: CapoturnoSession | null = null;
-  assignedTasks: AssignedTask[] = [];
-  technicianList: Technician[] = [];
-  selectedTask: AssignedTask | null = null;
-  taskTimeSpentHours = '0';
-  taskTimeSpentMinutes = '0';
-  taskStatus: Task['status'] = 'aperta';
-  taskTechnicians: Array<{ technicianId: string }> = [{ technicianId: '' }];
   selectedWorkOrder: WorkOrder | null = null;
   capoturnoName = 'Capoturno';
   capoturnoNickname = '';
@@ -1170,8 +1197,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ];
   capoturnoLoginState: { type: 'success' | 'error'; message: string } | null = null;
   allWorkOrders: WorkOrder[] = [];
-  searchTerm = '';
-  showCompletedOrders = false;
   appVersion = APP_VERSION;
   dashboardStats: DashboardStats = {
     interventions: 0,
@@ -1185,94 +1210,30 @@ export class AppComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private capoturnoSessionService = inject(CapoturnoSessionService);
   private workOrderService = inject(WorkOrderService);
-  private technicianService = inject(TechnicianService);
   private router = inject(Router);
-  private assignedTasksSub?: Subscription;
-  private techniciansSub?: Subscription;
   private workOrdersSub?: Subscription;
   private selectedWorkOrderSub?: Subscription;
-  private workOrdersSnapshot: WorkOrder[] = [];
-  readonly timeHoursOptions = Array.from({ length: 13 }, (_, index) => String(index));
-  readonly timeMinutesOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
-  private readonly technicianStorageKey = 'rail-service.tech-session';
   private readonly viewModeStorageKey = 'rail-service.view-mode';
 
-  setView(mode: 'capoturno' | 'tecnico' | 'admin'): void {
+  setView(mode: 'capoturno' | 'admin'): void {
     this.applyViewMode(mode);
   }
 
+  setCapoturnoSection(section: 'ordini' | 'materiali' | 'ti' | 'scadenze' | 'flotta'): void {
+    this.capoturnoSection = section;
+  }
+
   private applyViewMode(
-    mode: 'capoturno' | 'tecnico' | 'admin',
+    mode: 'capoturno' | 'admin',
     options?: { persist?: boolean; skipRouter?: boolean },
   ): void {
     this.viewMode = mode;
-    this.loginState = null;
-    if (mode !== 'tecnico') {
-      this.clearTechnicianSession();
-    }
     if (options?.persist !== false) {
       this.persistViewMode(mode);
     }
     if (options?.skipRouter !== true && mode !== 'admin') {
       this.router.navigateByUrl('/');
     }
-  }
-
-  private clearTechnicianSession(): void {
-    this.assignedTasksSub?.unsubscribe();
-    this.assignedTasksSub = undefined;
-    this.assignedTasks = [];
-    this.technicianSession = null;
-  }
-
-  toggleShowCompletedOrders(): void {
-    this.showCompletedOrders = !this.showCompletedOrders;
-    if (this.technicianSession) {
-      this.updateAssignedTasksView(
-        this.technicianSession.nickname.toLowerCase(),
-      );
-    }
-  }
-
-  updateSearchTerm(term: string): void {
-    this.searchTerm = term;
-    if (this.technicianSession) {
-      this.updateAssignedTasksView(
-        this.technicianSession.nickname.toLowerCase(),
-      );
-    }
-  }
-
-  loginTechnician(): void {
-    if (!this.tecNickname || !this.tecMatricola) {
-      this.loginState = {
-        type: 'error',
-        message: 'Inserisci nickname e matricola per accedere.',
-      };
-      return;
-    }
-
-    this.authService
-      .loginTechnician({
-        nickname: this.tecNickname,
-        matricola: this.tecMatricola,
-      })
-      .subscribe({
-        next: (session) => {
-          this.technicianSession = session;
-          this.loginState = { type: 'success', message: session.message };
-          this.assignedTasksSub?.unsubscribe();
-          this.watchAssignedTasks(session.nickname);
-          this.persistTechnicianSession(session);
-          this.searchTerm = '';
-          this.showCompletedOrders = false;
-        },
-        error: (error) => {
-          const message =
-            error?.error?.error ?? 'Errore durante il login tecnico.';
-          this.loginState = { type: 'error', message };
-        },
-      });
   }
 
   loginCapoturno(): void {
@@ -1307,7 +1268,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.restoreViewMode();
     this.loadDashboardStats();
-    this.restoreTechnicianSession();
     this.capoturnoSessionService.getSession().subscribe((session) => {
       this.capoturnoSession = session;
       this.capoturnoName = session?.name ?? 'Capoturno';
@@ -1317,9 +1277,6 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.workOrdersSub = this.workOrderService.getWorkOrders().subscribe((orders) => {
       this.allWorkOrders = orders;
-    });
-    this.techniciansSub = this.technicianService.getTechnicians().subscribe((list) => {
-      this.technicianList = list;
     });
     this.selectedWorkOrderSub = this.workOrderService
       .getSelectedWorkOrder()
@@ -1344,21 +1301,6 @@ export class AppComponent implements OnInit, OnDestroy {
         };
       },
     });
-  }
-
-  private watchAssignedTasks(nickname: string | null): void {
-    this.assignedTasksSub?.unsubscribe();
-    if (!nickname) {
-      this.assignedTasks = [];
-      return;
-    }
-    const normalized = nickname.toLowerCase();
-    this.assignedTasksSub = this.workOrderService
-      .getWorkOrders()
-      .subscribe((orders) => {
-        this.workOrdersSnapshot = orders;
-        this.updateAssignedTasksView(normalized);
-      });
   }
 
   getShiftLabel(shift?: string): string {
@@ -1413,50 +1355,43 @@ export class AppComponent implements OnInit, OnDestroy {
       .filter((order) => order.shift === shift)
       .sort((a, b) => this.sortTrainNumber(a.trainNumber, b.trainNumber));
 
-    const separator = `
-      <tr><td colspan="10" style="border:none;padding:4px;"></td></tr>
-      <tr><td colspan="10" style="border:none;padding:4px;"></td></tr>
-    `;
     let lastTrainNumber: string | null = null;
     const rows = orders.flatMap((order) => {
-      const sep = lastTrainNumber !== null && lastTrainNumber !== order.trainNumber ? separator : '';
+      const needsSep = lastTrainNumber !== null && lastTrainNumber !== order.trainNumber;
       lastTrainNumber = order.trainNumber;
+      const sep = needsSep
+        ? `<tr><td colspan="8" style="border:none;padding:4px;"></td></tr>`
+        : '';
+      const odlRow = `
+        <tr style="font-weight:bold;background:#f0f0f0;">
+          <td>${this.escapeHtml(order.trainNumber)}</td>
+          <td>${this.escapeHtml(order.codiceODL)}</td>
+          <td>Stato ODL - ${this.escapeHtml(this.formatStatus(order.status))}</td>
+          <td>Creato il ${this.escapeHtml(this.formatDateForExport(order.createdAt))}</td>
+          <td></td>
+          <td>Tipo lavorazione</td>
+          <td>Stato Lavorazioni</td>
+          <td>Tecnico</td>
+        </tr>
+      `;
       if (!order.tasks.length) {
-        return [
-          sep +
-          `
-          <tr>
-            <td>${this.escapeHtml(order.trainNumber)}</td>
-            <td>${this.escapeHtml(order.codiceODL)}</td>
-            <td>${this.escapeHtml(order.shift)}</td>
-            <td>${this.escapeHtml(this.formatStatus(order.status))}</td>
-            <td>${this.escapeHtml(this.formatDateForExport(order.createdAt))}</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          `,
-        ];
+        return [sep + odlRow];
       }
-      return order.tasks.map(
-        (task, index) => `
-          ${index === 0 ? sep : ''}
+      const taskRows = order.tasks.map(
+        (task) => `
           <tr>
-            <td>${this.escapeHtml(order.trainNumber)}</td>
-            <td>${this.escapeHtml(order.codiceODL)}</td>
-            <td>${this.escapeHtml(order.shift)}</td>
-            <td>${this.escapeHtml(this.formatStatus(order.status))}</td>
-            <td>${this.escapeHtml(this.formatDateForExport(order.createdAt))}</td>
-            <td>${index + 1}</td>
             <td>${this.escapeHtml(task.description)}</td>
+            <td></td>
+            <td>${this.escapeHtml(this.formatStatus(order.status))}</td>
+            <td></td>
+            <td></td>
             <td>${this.escapeHtml(this.formatPriority(task.priority))}</td>
             <td style="${this.getTaskStatusStyle(task.status)}">${this.escapeHtml(this.formatStatus(task.status))}</td>
             <td>${this.escapeHtml(task.assignedTechnicianName)}</td>
           </tr>
         `,
       );
+      return [sep + odlRow, ...taskRows];
     });
 
     const html = `
@@ -1471,7 +1406,6 @@ export class AppComponent implements OnInit, OnDestroy {
           </style>
         </head>
         <body>
-          <h3>Turno ${this.escapeHtml(this.capoturnoName)} • ${this.escapeHtml(shift)}</h3>
           <table class="meta">
             <tr><td><strong>Capoturno:</strong> ${this.escapeHtml(this.capoturnoName)}</td></tr>
             <tr><td><strong>Matricola:</strong> ${this.escapeHtml(this.capoturnoSession.matricola)}</td></tr>
@@ -1480,22 +1414,8 @@ export class AppComponent implements OnInit, OnDestroy {
           </table>
           <br />
           <table>
-            <thead>
-              <tr>
-                <th>Treno</th>
-                <th>Codice ODL</th>
-                <th>Turno</th>
-                <th>Stato ODL</th>
-                <th>Creato il</th>
-                <th>#</th>
-                <th>Descrizione</th>
-                <th>Priorità</th>
-                <th>Stato Task</th>
-                <th>Tecnico</th>
-              </tr>
-            </thead>
             <tbody>
-              ${rows.length ? rows.join('') : '<tr><td colspan="10">Nessun ordine nel turno selezionato</td></tr>'}
+              ${rows.length ? rows.join('') : '<tr><td colspan="8">Nessun ordine nel turno selezionato</td></tr>'}
             </tbody>
           </table>
         </body>
@@ -1566,197 +1486,12 @@ export class AppComponent implements OnInit, OnDestroy {
     return value.replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/-+/g, '-').toLowerCase();
   }
 
-  logoutTechnician(): void {
-    this.clearStoredTechnicianSession();
-    this.clearTechnicianSession();
-    this.tecNickname = '';
-    this.tecMatricola = '';
-    this.searchTerm = '';
-    this.showCompletedOrders = false;
-    this.loginState = { type: 'success', message: 'Logout completato.' };
-  }
-
   logoutCapoturno(): void {
     this.capoturnoSessionService.clearSession();
     this.capoturnoNickname = '';
     this.capoturnoMatricola = '';
     this.capoturnoShift = this.capoturnoShiftOptions[0];
     this.capoturnoLoginState = { type: 'success', message: 'Logout completato.' };
-  }
-
-  private updateAssignedTasksView(normalized: string): void {
-    let tasks = this.workOrdersSnapshot.flatMap((order) =>
-      order.tasks
-        .filter(() => true)
-        .map((task: Task) => ({
-          description: task.description,
-          priority: task.priority,
-          status: task.status,
-          orderCode: order.codiceODL,
-          trainNumber: order.trainNumber,
-          orderId: order.id,
-          taskId: task.id,
-          performedBy: task.performedBy,
-          timeSpentMinutes: task.timeSpentMinutes,
-        })),
-    );
-    const search = this.searchTerm.trim().toLowerCase();
-    if (search) {
-      tasks = tasks.filter(
-        (item) =>
-          item.description.toLowerCase().includes(search) ||
-          item.orderCode.toLowerCase().includes(search) ||
-          item.trainNumber.toLowerCase().includes(search),
-      );
-    }
-    this.assignedTasks = tasks;
-    if (this.selectedTask) {
-      const refreshed =
-        this.assignedTasks.find((task) => task.taskId === this.selectedTask?.taskId) ?? null;
-      this.selectedTask = refreshed;
-      if (!refreshed) {
-        this.taskTimeSpentHours = '0';
-        this.taskTimeSpentMinutes = '00';
-        this.taskStatus = 'aperta';
-        this.taskTechnicians = [{ technicianId: '' }];
-      }
-    }
-  }
-
-  openTaskCompilation(task: AssignedTask): void {
-    this.selectedTask = task;
-    if (task.timeSpentMinutes) {
-      const hours = Math.floor(task.timeSpentMinutes / 60);
-      const minutes = task.timeSpentMinutes % 60;
-      this.taskTimeSpentHours = String(hours);
-      this.taskTimeSpentMinutes = minutes.toString().padStart(2, '0');
-    } else {
-      this.taskTimeSpentHours = '0';
-      this.taskTimeSpentMinutes = '00';
-    }
-    this.taskStatus = task.status;
-    if (task.performedBy?.length) {
-      this.taskTechnicians = task.performedBy.map((tech) => ({ technicianId: tech.id }));
-    } else {
-      this.taskTechnicians = [{ technicianId: this.findLoggedTechnicianId() }];
-    }
-  }
-
-  addTechnicianRow(): void {
-    this.taskTechnicians = [...this.taskTechnicians, { technicianId: '' }];
-  }
-
-  removeTechnicianRow(index: number): void {
-    if (this.taskTechnicians.length <= 1) {
-      this.taskTechnicians = [{ technicianId: '' }];
-      return;
-    }
-    this.taskTechnicians = this.taskTechnicians.filter((_, i) => i !== index);
-  }
-
-  saveTaskCompilation(): void {
-    if (!this.selectedTask) {
-      return;
-    }
-    const hours = Number(this.taskTimeSpentHours);
-    const minutes = Number(this.taskTimeSpentMinutes);
-    const timeSpentMinutes = hours * 60 + minutes;
-    if (Number.isNaN(timeSpentMinutes) || timeSpentMinutes < 0) {
-      return;
-    }
-    const performedBy = this.taskTechnicians
-      .map((row) => this.technicianList.find((tech) => tech.id === row.technicianId))
-      .filter((tech): tech is Technician => !!tech)
-      .map((tech) => ({
-        id: tech.id,
-        name: tech.name,
-        matricola: tech.matricola,
-      }));
-
-    this.workOrderService.updateTask(this.selectedTask.orderId, this.selectedTask.taskId, {
-      timeSpentMinutes,
-      performedBy,
-      status: this.taskStatus,
-    });
-    this.selectedTask = null;
-  }
-
-  taskStatusLabel(status: Task['status']): string {
-    if (status === 'in_progress') return 'In corso';
-    if (status === 'risolte') return 'Risolte';
-    if (status === 'rimandato') return 'Rimandato';
-    return 'Aperta';
-  }
-
-  getTechnicianMatricola(technicianId: string): string {
-    const technician = this.technicianList.find((tech) => tech.id === technicianId);
-    return technician?.matricola ?? '';
-  }
-
-  private findLoggedTechnicianId(): string {
-    if (!this.technicianSession) {
-      return '';
-    }
-    const normalizedMatricola = this.technicianSession.matricola.toUpperCase();
-    const match = this.technicianList.find(
-      (tech) =>
-        tech.matricola.toUpperCase() === normalizedMatricola ||
-        tech.nickname.toLowerCase() === this.technicianSession?.nickname.toLowerCase(),
-    );
-    return match?.id ?? '';
-  }
-
-  private restoreTechnicianSession(): void {
-    const session = this.readStoredTechnicianSession();
-    if (!session) {
-      return;
-    }
-    this.technicianSession = session;
-    this.tecNickname = session.nickname;
-    this.tecMatricola = session.matricola;
-    this.loginState = {
-      type: 'success',
-      message: session.message ?? 'Sessione ripristinata.',
-    };
-    this.searchTerm = '';
-    this.showCompletedOrders = false;
-    this.watchAssignedTasks(session.nickname);
-  }
-
-  private persistTechnicianSession(session: TechnicianSession): void {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem(
-        this.technicianStorageKey,
-        JSON.stringify(session),
-      );
-    } catch {
-      // ignore
-    }
-  }
-
-  private readStoredTechnicianSession(): TechnicianSession | null {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    try {
-      const raw = window.localStorage.getItem(this.technicianStorageKey);
-      if (!raw) {
-        return null;
-      }
-      return JSON.parse(raw) as TechnicianSession;
-    } catch {
-      return null;
-    }
-  }
-
-  private clearStoredTechnicianSession(): void {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    window.localStorage.removeItem(this.technicianStorageKey);
   }
 
   private restoreViewMode(): void {
@@ -1767,27 +1502,25 @@ export class AppComponent implements OnInit, OnDestroy {
     this.applyViewMode(stored, { persist: false, skipRouter: true });
   }
 
-  private persistViewMode(mode: 'capoturno' | 'tecnico' | 'admin'): void {
+  private persistViewMode(mode: 'capoturno' | 'admin'): void {
     if (typeof window === 'undefined') {
       return;
     }
     window.localStorage.setItem(this.viewModeStorageKey, mode);
   }
 
-  private readStoredViewMode(): 'capoturno' | 'tecnico' | 'admin' | null {
+  private readStoredViewMode(): 'capoturno' | 'admin' | null {
     if (typeof window === 'undefined') {
       return null;
     }
     const stored = window.localStorage.getItem(this.viewModeStorageKey);
-    if (stored === 'capoturno' || stored === 'tecnico' || stored === 'admin') {
+    if (stored === 'capoturno' || stored === 'admin') {
       return stored;
     }
     return null;
   }
 
   ngOnDestroy(): void {
-    this.assignedTasksSub?.unsubscribe();
-    this.techniciansSub?.unsubscribe();
     this.workOrdersSub?.unsubscribe();
     this.selectedWorkOrderSub?.unsubscribe();
   }

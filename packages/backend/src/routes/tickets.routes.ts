@@ -4,6 +4,7 @@ import {
   getTicket,
   createTicket,
   cancelTicket,
+  completeTicket,
   addTask,
   updateTask,
   deleteTask,
@@ -15,6 +16,7 @@ router.get('/', listTickets);
 router.post('/', createTicket);
 router.get('/:id', getTicket);
 router.patch('/:id/cancel', cancelTicket);
+router.patch('/:id/complete', completeTicket);
 router.post('/:id/tasks', addTask);
 router.put('/:id/tasks/:taskId', updateTask);
 router.delete('/:id/tasks/:taskId', deleteTask);
