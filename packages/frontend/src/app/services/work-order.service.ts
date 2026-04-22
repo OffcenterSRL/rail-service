@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable, Subscription, from, of, timer } from 'rxjs';
-import { concatMap, last, map, switchMap } from 'rxjs/operators';
+import { BehaviorSubject, Observable, Subscription, timer } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 import { TicketRecord, TicketService, TaskPayload } from './ticket.service';
 
 export interface Task {
@@ -89,27 +89,6 @@ export class WorkOrderService implements OnDestroy {
     return this.ticketService
       .bookTicket({ trainNumber, shift, codiceODL: odlNumber, openedAt: openedAt?.toISOString(), assignedTechnician })
       .pipe(
-        switchMap((ticket) => {
-          const deferredToAdd = this.buildDeferredTasksForOrder(trainNumber, ticket._id, []);
-          if (!deferredToAdd.length) {
-            return of(ticket);
-          }
-          return from(deferredToAdd).pipe(
-            concatMap((task) =>
-              this.ticketService.addTask(ticket._id, {
-                description: task.description,
-                priority: task.priority,
-                assignedTechnicianId: task.assignedTechnicianId,
-                assignedTechnicianName: task.assignedTechnicianName,
-                assignedTechnicianNickname: task.assignedTechnicianNickname,
-                deferredKey: task.deferredKey,
-                deferredSince: task.deferredSince,
-                deferredCount: task.deferredCount,
-              }),
-            ),
-            last(),
-          );
-        }),
         map((ticket) => {
           const order = this.mapTicketToWorkOrder(ticket);
           const others = this.workOrders$.value.filter((o) => o.id !== order.id);
@@ -118,6 +97,24 @@ export class WorkOrderService implements OnDestroy {
           return order;
         }),
       );
+  }
+
+  getPendingDeferredTasks(trainNumber: string, workOrderId: string): Task[] {
+    const order = this.workOrders$.value.find((o) => o.id === workOrderId);
+    return this.buildDeferredTasksForOrder(trainNumber, workOrderId, order?.tasks ?? []);
+  }
+
+  acceptDeferredTask(workOrderId: string, task: Task): void {
+    this.addTask(workOrderId, {
+      description: task.description,
+      priority: task.priority,
+      assignedTechnicianId: task.assignedTechnicianId,
+      assignedTechnicianName: task.assignedTechnicianName,
+      assignedTechnicianNickname: task.assignedTechnicianNickname,
+      deferredKey: task.deferredKey,
+      deferredSince: task.deferredSince,
+      deferredCount: task.deferredCount,
+    });
   }
 
   cancelWorkOrder(workOrderId: string): Observable<WorkOrder> {
@@ -137,6 +134,10 @@ export class WorkOrderService implements OnDestroy {
   }
 
   completeWorkOrder(workOrderId: string): Observable<WorkOrder> {
+    const closingOrder = this.workOrders$.value.find((o) => o.id === workOrderId);
+    if (closingOrder) {
+      this.incrementPendingDeferredsOnClose(closingOrder.trainNumber, workOrderId);
+    }
     return this.ticketService.completeTicket(workOrderId).pipe(
       map((ticket) => {
         const updated = this.mapTicketToWorkOrder(ticket);
@@ -308,10 +309,29 @@ export class WorkOrderService implements OnDestroy {
             active: true,
           };
           const idx = list.findIndex((r) => r.deferredKey === record.deferredKey);
-          if (idx >= 0) list[idx] = record;
-          else list.push(record);
+          if (idx >= 0) {
+            // Keep the record with the highest count (most recent deferral wins)
+            if (record.deferredCount >= list[idx].deferredCount) {
+              list[idx] = record;
+            }
+          } else {
+            list.push(record);
+          }
         });
     });
+
+    // Second pass: remove any deferredKey that has been resolved in any order
+    const resolvedKeys = new Set<string>();
+    workOrders.forEach((order) => {
+      order.tasks
+        .filter((t) => t.status === 'risolte' && t.deferredKey)
+        .forEach((t) => resolvedKeys.add(`${order.trainNumber}::${t.deferredKey}`));
+    });
+    for (const trainNumber of Object.keys(this.deferredByTrain)) {
+      this.deferredByTrain[trainNumber] = this.deferredByTrain[trainNumber].filter(
+        (r) => !resolvedKeys.has(`${trainNumber}::${r.deferredKey}`),
+      );
+    }
   }
 
   private buildDeferredTasksForOrder(
@@ -355,10 +375,11 @@ export class WorkOrderService implements OnDestroy {
       const existing = this.findDeferredRecord(trainNumber, next.deferredKey);
       const createdAtIso = orderCreatedAt ? new Date(orderCreatedAt).toISOString() : nowIso;
       const deferredSince = next.deferredSince ?? existing?.deferredSince ?? createdAtIso;
-      let deferredCount = next.deferredCount ?? existing?.deferredCount ?? 0;
-      const shouldIncrement =
-        previous.status !== 'rimandato' || existing?.lastDeferredOrderId !== workOrderId;
-      if (shouldIncrement) {
+      // Use the cache as authoritative count to avoid stale values from the task record
+      let deferredCount = existing?.deferredCount ?? next.deferredCount ?? 0;
+      // Increment only once per ODL: if lastDeferredOrderId is already this ODL, skip
+      const alreadyCountedInThisOdl = existing?.lastDeferredOrderId === workOrderId;
+      if (!alreadyCountedInThisOdl) {
         deferredCount = Math.max(1, deferredCount + 1);
       }
       const deferredKey = next.deferredKey ?? existing?.deferredKey ?? this.generateTaskId();
@@ -379,6 +400,7 @@ export class WorkOrderService implements OnDestroy {
     }
 
     if (previous.status === 'rimandato' && previous.deferredKey) {
+      const newCount = Math.max(0, (previous.deferredCount ?? 1) - 1);
       if (next.status === 'risolte') {
         this.removeDeferredRecord(trainNumber, previous.deferredKey);
       } else {
@@ -386,12 +408,21 @@ export class WorkOrderService implements OnDestroy {
         if (existing) {
           this.upsertDeferredRecord(trainNumber, {
             ...existing,
+            deferredCount: newCount,
             active: false,
-            lastDeferredOrderId: workOrderId,
+            lastDeferredOrderId: '',
           });
         }
       }
+      return { ...next, deferredCount: newCount };
     }
+
+    // Task was not rimandato but has a deferredKey and is being resolved:
+    // remove it from the deferred chain so it won't resurface in future ODLs
+    if (next.status === 'risolte' && previous.deferredKey) {
+      this.removeDeferredRecord(trainNumber, previous.deferredKey);
+    }
+
     return next;
   }
 
@@ -414,6 +445,29 @@ export class WorkOrderService implements OnDestroy {
   private removeDeferredRecord(trainNumber: string, deferredKey: string): void {
     const list = this.deferredByTrain[trainNumber] ?? [];
     this.deferredByTrain[trainNumber] = list.filter((r) => r.deferredKey !== deferredKey);
+  }
+
+  private incrementPendingDeferredsOnClose(trainNumber: string, closingOrderId: string): void {
+    const pendingRecords = (this.deferredByTrain[trainNumber] ?? []).filter(
+      (r) => r.active !== false && r.lastDeferredOrderId !== closingOrderId,
+    );
+
+    for (const record of pendingRecords) {
+      const newCount = record.deferredCount + 1;
+      this.upsertDeferredRecord(trainNumber, { ...record, deferredCount: newCount });
+
+      const sourceOrder = this.workOrders$.value.find((o) => o.id === record.lastDeferredOrderId);
+      const sourceTask = sourceOrder?.tasks.find(
+        (t) => t.deferredKey === record.deferredKey && t.status === 'rimandato',
+      );
+      if (sourceOrder && sourceTask) {
+        const updated = { ...sourceTask, deferredCount: newCount };
+        const { id: _id, ...apiUpdates } = updated;
+        this.ticketService.updateTask(sourceOrder.id, sourceTask.id, apiUpdates).subscribe((ticket) => {
+          this.mergeTicket(ticket);
+        });
+      }
+    }
   }
 
   private generateTaskId(): string {

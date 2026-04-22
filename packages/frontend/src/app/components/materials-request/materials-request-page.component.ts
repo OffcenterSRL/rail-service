@@ -59,6 +59,25 @@ interface SavedMaterialRequest {
 
 type WizardStep = 'train' | 'select' | 'details';
 
+// ── Email configuration ────────────────────────────────────────────────────
+const MAIL_TO = 'hubfirenze@magazzinohr.it'; // Magazzino HRI - Hub Firenze
+const MAIL_CC: string[] = [
+  'hmu.service@ricolfi.com',
+  'Angelo.Perone@hitachirail.com',
+  'Maria.Trombetta@hitachirail.com',
+  'ilaria.fontana@hitachirail.com',
+  'Antonino.Corsaro@hitachirail.com',
+  'Vincenzo.Cozzi@hitachirail.com',
+  'michele.deblasi@hitachirail.com',
+  'Gennaro.Gatto@hitachirail.com',
+  'aldo.napolitano@hitachirail.com',
+  'Gennaro.Palmieri@hitachirail.com',
+  'Antonio.Zottola@hitachirail.com',
+  'Domenico.Nanci@hitachirail.com',
+  'leonardo.miraka@hitachirail.com',
+];
+// ──────────────────────────────────────────────────────────────────────────
+
 @Component({
   selector: 'app-materials-request-page',
   standalone: true,
@@ -1207,6 +1226,7 @@ export class MaterialsRequestPageComponent implements OnInit, OnDestroy {
         })),
       });
 
+      this.openMailClient(this.selectedTrainNumber);
       this.isModalOpen = false;
       this.resetWizard();
     } catch (error) {
@@ -1354,6 +1374,16 @@ export class MaterialsRequestPageComponent implements OnInit, OnDestroy {
     } catch {
       // ignore storage errors
     }
+  }
+
+  private openMailClient(trainNumber: string): void {
+    const subject = encodeURIComponent(`Richiesta materiale ${trainNumber}`);
+    const body = encodeURIComponent(
+      'Buongiorno\n\nCon la presente sono a richiedere il materiale in allegato\n\nSaluti',
+    );
+    const cc = encodeURIComponent(MAIL_CC.join(';'));
+    const mailto = `mailto:${MAIL_TO}?cc=${cc}&subject=${subject}&body=${body}`;
+    window.location.href = mailto;
   }
 
   ngOnDestroy(): void {

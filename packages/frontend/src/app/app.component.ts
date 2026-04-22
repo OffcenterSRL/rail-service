@@ -29,6 +29,31 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
   ],
   template: `
     <div class="app-shell">
+
+      <!-- Shift selection modal (shown after login, before entering app) -->
+      <div class="shift-modal-backdrop" *ngIf="showShiftModal">
+        <div class="shift-modal">
+          <div class="shift-modal-header">
+            <span class="shift-modal-title">Seleziona il turno</span>
+            <p class="shift-modal-sub">Scegli il turno di lavoro per questa sessione</p>
+          </div>
+          <div class="shift-options">
+            <button
+              *ngFor="let option of capoturnoShiftOptions"
+              class="shift-option"
+              [class.selected]="capoturnoShift === option"
+              (click)="capoturnoShift = option"
+            >
+              <span class="shift-option-dot"></span>
+              {{ option }}
+            </button>
+          </div>
+          <button class="shift-confirm-btn" (click)="confirmShift()">
+            Entra nel programma
+          </button>
+        </div>
+      </div>
+
       <header class="header">
         <div class="header-content">
           <div class="logo">
@@ -52,59 +77,39 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
                 Admin
               </button>
             </div>
-            <button
+            <!-- Profile avatar + dropdown -->
+            <div
+              class="profile-wrap"
               *ngIf="viewMode === 'capoturno' && capoturnoSession"
-              class="logout-btn"
-              type="button"
-              (click)="logoutCapoturno()"
             >
-              Esci
-            </button>
+              <button class="profile-avatar" (click)="toggleProfileDropdown()">
+                {{ getInitials() }}
+              </button>
+              <div class="profile-dropdown" *ngIf="profileDropdownOpen">
+                <div class="profile-dropdown-name">{{ capoturnoName }}</div>
+                <div class="profile-dropdown-shift">Turno {{ getShiftLabel(capoturnoShift) }}</div>
+                <hr class="profile-dropdown-divider" />
+                <button class="profile-logout-btn" (click)="logoutCapoturno()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                  </svg>
+                  Esci
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <section class="hero-strip" *ngIf="!(viewMode === 'capoturno' && !capoturnoSession)">
-        <div class="hero-strip-top">
-            <div class="hero-copy">
-              <p class="hero-label">Dashboard Operativa</p>
-              <h1>
-              {{ capoturnoName }} • Turno {{ getShiftLabel(capoturnoShift) }}
-              </h1>
-              <button
-                *ngIf="viewMode === 'capoturno' && capoturnoSession"
-                class="hero-export"
-                type="button"
-                (click)="exportCapoturnoShift()"
-              >
-                Esporta turno
-              </button>
-              <p class="hero-subtitle">
-                {{
-                  viewMode === 'capoturno'
-                  ? ''
-                  : 'Admin view · aggiorna i tecnici e i parametri operativi'
-                }}
-              </p>
-          </div>
-          <div class="hero-metrics">
-            <div class="metric-card">
-              <span class="metric-value">{{ getOpenOrdersForShift().length }}</span>
-              <span class="metric-label">Interventi totali</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value">{{ getOpenOrdersForShift().length }}</span>
-              <span class="metric-label">ODL attivi</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value">{{
-                dashboardStats.lastUpdated | date: 'shortTime'
-              }}</span>
-              <span class="metric-label">Ultimo aggiornamento</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <!-- Backdrop to close dropdown -->
+      <div
+        class="profile-backdrop"
+        *ngIf="profileDropdownOpen"
+        (click)="profileDropdownOpen = false"
+      ></div>
 
       <div class="main-layout">
         <ng-container [ngSwitch]="viewMode">
@@ -208,7 +213,7 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
                   <div class="panel-heading">
                     <h2>Login Capoturno</h2>
                     <span class="panel-subtitle">
-                      Accedi con nickname, matricola e turno per gestire gli ordini.
+                      Accedi con nickname e matricola per gestire gli ordini.
                     </span>
                   </div>
                   <p
@@ -226,14 +231,6 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
                   <div class="field">
                     <label>Matricola</label>
                     <input type="text" [(ngModel)]="capoturnoMatricola" placeholder="C-2001" />
-                  </div>
-                  <div class="field">
-                    <label>Turno</label>
-                    <select [(ngModel)]="capoturnoShift">
-                      <option *ngFor="let option of capoturnoShiftOptions" [value]="option">
-                        {{ option }}
-                      </option>
-                    </select>
                   </div>
                   <button class="btn btn-primary" (click)="loginCapoturno()">
                     Accedi come capoturno
@@ -471,6 +468,95 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         box-shadow: 0 10px 18px rgba(255, 77, 79, 0.25);
       }
 
+      /* ── Profile avatar + dropdown ── */
+      .profile-wrap {
+        position: relative;
+      }
+
+      .profile-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #7bc7ff, #4b6ef5);
+        color: #02050c;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 0 2px rgba(123, 199, 255, 0.3);
+        transition: box-shadow 0.15s, transform 0.15s;
+        flex-shrink: 0;
+      }
+
+      .profile-avatar:hover {
+        transform: scale(1.06);
+        box-shadow: 0 0 0 3px rgba(123, 199, 255, 0.5);
+      }
+
+      .profile-dropdown {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        background: #0f1625;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 16px;
+        min-width: 210px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        z-index: 1500;
+      }
+
+      .profile-dropdown-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .profile-dropdown-shift {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .profile-dropdown-divider {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        margin: 8px 0 4px;
+      }
+
+      .profile-logout-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 77, 79, 0.1);
+        border: 1px solid rgba(255, 77, 79, 0.3);
+        color: #ff6c6c;
+        border-radius: 10px;
+        padding: 9px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        width: 100%;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .profile-logout-btn:hover {
+        background: rgba(255, 77, 79, 0.18);
+        border-color: rgba(255, 77, 79, 0.55);
+      }
+
+      .profile-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1499;
+      }
+
       .tecnico-login {
         flex: 1;
         display: flex;
@@ -577,6 +663,117 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         background: rgba(255, 255, 255, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.15);
         color: var(--text-primary);
+      }
+
+      /* ── Shift selection modal ── */
+      .shift-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.72);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .shift-modal {
+        background: #0f1625;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 22px;
+        padding: 36px 40px 32px;
+        width: 100%;
+        max-width: 420px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8);
+      }
+
+      .shift-modal-header {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .shift-modal-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .shift-modal-sub {
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      .shift-options {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .shift-option {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 20px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s, color 0.15s;
+        text-align: left;
+      }
+
+      .shift-option:hover {
+        border-color: rgba(123, 199, 255, 0.3);
+        background: rgba(123, 199, 255, 0.05);
+        color: var(--text-primary);
+      }
+
+      .shift-option.selected {
+        border-color: #7bc7ff;
+        background: rgba(123, 199, 255, 0.1);
+        color: var(--text-primary);
+      }
+
+      .shift-option-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.25);
+        flex-shrink: 0;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .shift-option.selected .shift-option-dot {
+        background: #7bc7ff;
+        border-color: #7bc7ff;
+      }
+
+      .shift-confirm-btn {
+        background: linear-gradient(180deg, #7bc7ff, #4b6ef5);
+        color: #02050c;
+        border: none;
+        padding: 14px 20px;
+        border-radius: 14px;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 12px 32px rgba(75, 110, 245, 0.35);
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
+
+      .shift-confirm-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 36px rgba(75, 110, 245, 0.45);
       }
 
       .assigned-tasks {
@@ -1196,6 +1393,9 @@ export class AppComponent implements OnInit, OnDestroy {
     'Notte (22-06)',
   ];
   capoturnoLoginState: { type: 'success' | 'error'; message: string } | null = null;
+  showShiftModal = false;
+  profileDropdownOpen = false;
+  private pendingSession: CapoturnoSession | null = null;
   allWorkOrders: WorkOrder[] = [];
   appVersion = APP_VERSION;
   dashboardStats: DashboardStats = {
@@ -1237,10 +1437,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   loginCapoturno(): void {
-    if (!this.capoturnoNickname || !this.capoturnoMatricola || !this.capoturnoShift) {
+    if (!this.capoturnoNickname || !this.capoturnoMatricola) {
       this.capoturnoLoginState = {
         type: 'error',
-        message: 'Inserisci nickname, matricola e turno per accedere.',
+        message: 'Inserisci nickname e matricola per accedere.',
       };
       return;
     }
@@ -1252,17 +1452,36 @@ export class AppComponent implements OnInit, OnDestroy {
       })
       .subscribe({
         next: (session) => {
-          this.capoturnoSessionService.setSession({
-            ...session,
-            shift: this.capoturnoShift,
-          });
-          this.capoturnoLoginState = { type: 'success', message: session.message };
+          this.pendingSession = session;
+          this.capoturnoShift = this.capoturnoShiftOptions[0];
+          this.showShiftModal = true;
         },
         error: (error) => {
           const message = error?.error?.error ?? 'Errore durante il login capoturno.';
           this.capoturnoLoginState = { type: 'error', message };
         },
       });
+  }
+
+  getInitials(): string {
+    const parts = this.capoturnoName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  toggleProfileDropdown(): void {
+    this.profileDropdownOpen = !this.profileDropdownOpen;
+  }
+
+  confirmShift(): void {
+    if (!this.pendingSession) return;
+    this.capoturnoSessionService.setSession({
+      ...this.pendingSession,
+      shift: this.capoturnoShift,
+    });
+    this.capoturnoLoginState = { type: 'success', message: this.pendingSession.message };
+    this.pendingSession = null;
+    this.showShiftModal = false;
   }
 
   ngOnInit(): void {
@@ -1487,6 +1706,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   logoutCapoturno(): void {
+    this.profileDropdownOpen = false;
     this.capoturnoSessionService.clearSession();
     this.capoturnoNickname = '';
     this.capoturnoMatricola = '';

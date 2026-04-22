@@ -100,9 +100,48 @@ import {
               </div>
             </div>
             <div class="stats-actions">
+              <div class="deferred-btn-wrap" *ngIf="pendingDeferredTasks.length > 0">
+                <button class="btn btn-deferred btn-add-compact" type="button" (click)="showDeferredPanel = true">
+                  Rimandate
+                </button>
+                <span class="deferred-badge">{{ pendingDeferredTasks.length }}</span>
+              </div>
               <button class="btn btn-add btn-add-compact" type="button" (click)="openNewTaskModal()">
                 Aggiungi lavorazione
               </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deferred tasks panel -->
+        <div *ngIf="showDeferredPanel" class="modal-backdrop" (click)="showDeferredPanel = false">
+          <div class="modal-card deferred-panel" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <div>
+                <span class="section-label">Lavorazioni rimandate</span>
+                <p class="section-subtitle">Seleziona quelle da prendere in carico per questo ODL.</p>
+              </div>
+              <button class="btn btn-secondary btn-close" type="button" (click)="showDeferredPanel = false">Chiudi</button>
+            </div>
+            <div class="deferred-list">
+              <div *ngFor="let task of pendingDeferredTasks" class="deferred-row">
+                <div class="deferred-info">
+                  <span class="deferred-desc">{{ task.description }}</span>
+                  <span class="deferred-meta">{{ task.priority | titlecase }} · {{ task.assignedTechnicianName || '—' }}</span>
+                  <span class="deferred-history">
+                    Rimandato {{ task.deferredCount }} {{ task.deferredCount === 1 ? 'volta' : 'volte' }} dal {{ task.deferredSince | date:'dd/MM/yyyy' }}
+                  </span>
+                </div>
+                <button class="btn-accept" type="button" (click)="acceptDeferredTask(task)" title="Prendi in carico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                       stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </button>
+              </div>
+              <div *ngIf="pendingDeferredTasks.length === 0" class="deferred-empty">
+                Tutte le lavorazioni rimandate sono state prese in carico.
+              </div>
             </div>
           </div>
         </div>
@@ -200,10 +239,10 @@ import {
                     · {{ task.preventiveType }}
                   </span>
                   <span
-                    *ngIf="task.status === 'rimandato' && task.deferredSince"
+                    *ngIf="task.deferredSince"
                     class="task-deferred"
                   >
-                    · Rimandato {{ task.deferredCount ?? 1 }} volte dal
+                    · Rimandato {{ task.deferredCount ?? 1 }} {{ (task.deferredCount ?? 1) === 1 ? 'volta' : 'volte' }} dal
                     {{ task.deferredSince | date: 'dd/MM/yyyy' }}
                   </span>
                 </div>
@@ -441,6 +480,7 @@ import {
         gap: 10px;
         flex-wrap: wrap;
         justify-content: flex-end;
+        align-items: center;
       }
 
       .btn {
@@ -572,11 +612,10 @@ import {
       }
 
       .btn-add-compact {
-        height: 32px;
-        padding: 0 14px;
-        font-size: 12px;
+        padding: 10px 20px;
+        font-size: 13px;
+        font-weight: 600;
         white-space: nowrap;
-        margin-left: auto;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -587,6 +626,122 @@ import {
         align-items: center;
         gap: 8px;
         margin-left: auto;
+      }
+
+      .deferred-btn-wrap {
+        position: relative;
+        display: inline-flex;
+      }
+
+      .btn-deferred {
+        background: rgba(251, 146, 60, 0.15);
+        border: 1px solid rgba(251, 146, 60, 0.4);
+        color: #fb923c;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .btn-deferred:hover {
+        background: rgba(251, 146, 60, 0.25);
+        border-color: rgba(251, 146, 60, 0.7);
+      }
+
+      .deferred-badge {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        background: #fb923c;
+        color: #0b0b0b;
+        font-size: 10px;
+        font-weight: 800;
+        min-width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
+        pointer-events: none;
+        line-height: 1;
+      }
+
+      /* Deferred panel */
+      .deferred-panel {
+        max-width: 620px;
+      }
+
+      .deferred-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 4px 0;
+      }
+
+      .deferred-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(251, 146, 60, 0.15);
+        background: rgba(251, 146, 60, 0.04);
+      }
+
+      .deferred-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+      }
+
+      .deferred-desc {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .deferred-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .deferred-history {
+        font-size: 11px;
+        color: #fb923c;
+        font-weight: 500;
+      }
+
+      .btn-accept {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid rgba(74, 222, 128, 0.4);
+        background: rgba(74, 222, 128, 0.1);
+        color: #4ade80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, transform 0.15s;
+      }
+
+      .btn-accept:hover {
+        background: rgba(74, 222, 128, 0.22);
+        border-color: rgba(74, 222, 128, 0.7);
+        transform: scale(1.08);
+      }
+
+      .deferred-empty {
+        text-align: center;
+        padding: 24px;
+        font-size: 13px;
+        color: var(--text-secondary);
       }
 
       .work-order-code {
@@ -717,7 +872,6 @@ import {
         background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
         color: #0c0602;
         border-radius: 999px;
-        padding: 10px 18px;
         font-weight: 600;
       }
 
@@ -912,7 +1066,7 @@ import {
         }
 
         .btn-add-compact {
-          margin-left: 0;
+          width: auto;
         }
 
       }
@@ -1056,6 +1210,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   orderCancellationInProgress = false;
   orderClosingInProgress = false;
   isNewTaskModalOpen = false;
+  showDeferredPanel = false;
+  pendingDeferredTasks: Task[] = [];
 
   constructor(
     private fb: FormBuilder,
@@ -1086,7 +1242,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
           priority: 'correttiva',
           assignedTechnicianId: '',
         });
+        this.showDeferredPanel = false;
       }
+      this.pendingDeferredTasks = order
+        ? this.workOrderService.getPendingDeferredTasks(order.trainNumber, order.id)
+        : [];
     });
     this.capoturnoSessionSub = this.capoturnoSessionService.getSession().subscribe((session) => {
       this.capoturnoSession = session;
@@ -1116,7 +1276,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.workOrderService.saveWorkOrders();
       this.newTaskForm.reset({
         description: '',
-        priority: 'preventiva',
+        priority: 'correttiva',
         preventiveType: '',
         assignedTechnicianId: '',
       });
@@ -1126,6 +1286,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   openNewTaskModal(): void {
     this.isNewTaskModalOpen = true;
+  }
+
+  acceptDeferredTask(task: Task): void {
+    if (!this.selectedOrder) return;
+    this.workOrderService.acceptDeferredTask(this.selectedOrder.id, task);
+    this.pendingDeferredTasks = this.pendingDeferredTasks.filter(
+      (t) => t.deferredKey !== task.deferredKey,
+    );
   }
 
   closeNewTaskModal(): void {
