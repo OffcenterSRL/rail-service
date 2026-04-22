@@ -275,6 +275,8 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         border-radius: 16px;
         padding: 16px 28px;
         backdrop-filter: blur(14px);
+        position: relative;
+        z-index: 200;
       }
 
       .header-content {
@@ -554,7 +556,7 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
       .profile-backdrop {
         position: fixed;
         inset: 0;
-        z-index: 1499;
+        z-index: 100;
       }
 
       .tecnico-login {
