@@ -9,6 +9,7 @@ import { AdminComponent } from './components/admin/admin.component';
 import { FlottaToscanaPageComponent } from './components/flotta-toscana/flotta-toscana-page.component';
 import { MaterialsRequestPageComponent } from './components/materials-request/materials-request-page.component';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
+import { AdminSessionService } from './services/admin-session.service';
 import { AuthService, CapoturnoSession } from './services/auth.service';
 import { CapoturnoSessionService } from './services/capoturno-session.service';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
@@ -77,6 +78,24 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
                 Admin
               </button>
             </div>
+            <!-- Admin profile avatar -->
+            <div class="profile-wrap" *ngIf="viewMode === 'admin' && adminLoggedIn">
+              <button class="profile-avatar profile-avatar-admin" (click)="toggleAdminDropdown()">ADM</button>
+              <div class="profile-dropdown" *ngIf="adminDropdownOpen">
+                <div class="profile-dropdown-name">Amministratore</div>
+                <hr class="profile-dropdown-divider" />
+                <button class="profile-logout-btn" (click)="logoutAdmin()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                  </svg>
+                  Esci
+                </button>
+              </div>
+            </div>
+
             <!-- Profile avatar + dropdown -->
             <div
               class="profile-wrap"
@@ -104,11 +123,11 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         </div>
       </header>
 
-      <!-- Backdrop to close dropdown -->
+      <!-- Backdrop to close dropdowns -->
       <div
         class="profile-backdrop"
-        *ngIf="profileDropdownOpen"
-        (click)="profileDropdownOpen = false"
+        *ngIf="profileDropdownOpen || adminDropdownOpen"
+        (click)="profileDropdownOpen = false; adminDropdownOpen = false"
       ></div>
 
       <div class="main-layout">
@@ -492,6 +511,17 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         box-shadow: 0 0 0 2px rgba(123, 199, 255, 0.3);
         transition: box-shadow 0.15s, transform 0.15s;
         flex-shrink: 0;
+      }
+
+      .profile-avatar-admin {
+        background: linear-gradient(135deg, #a78bfa, #7c3aed);
+        box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.3);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+      }
+
+      .profile-avatar-admin:hover {
+        box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.5);
       }
 
       .profile-avatar:hover {
@@ -1014,7 +1044,7 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
       }
 
       .admin-placeholder {
-        width: 100%;
+        display: contents;
       }
 
       /* ── Collapsible nav sidebar ── */
@@ -1397,6 +1427,8 @@ export class AppComponent implements OnInit, OnDestroy {
   capoturnoLoginState: { type: 'success' | 'error'; message: string } | null = null;
   showShiftModal = false;
   profileDropdownOpen = false;
+  adminDropdownOpen = false;
+  adminLoggedIn = false;
   private pendingSession: CapoturnoSession | null = null;
   allWorkOrders: WorkOrder[] = [];
   appVersion = APP_VERSION;
@@ -1411,6 +1443,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private dashboardService = inject(DashboardService);
   private authService = inject(AuthService);
   private capoturnoSessionService = inject(CapoturnoSessionService);
+  private adminSessionService = inject(AdminSessionService);
   private workOrderService = inject(WorkOrderService);
   private router = inject(Router);
   private workOrdersSub?: Subscription;
@@ -1475,6 +1508,15 @@ export class AppComponent implements OnInit, OnDestroy {
     this.profileDropdownOpen = !this.profileDropdownOpen;
   }
 
+  toggleAdminDropdown(): void {
+    this.adminDropdownOpen = !this.adminDropdownOpen;
+  }
+
+  logoutAdmin(): void {
+    this.adminDropdownOpen = false;
+    this.adminSessionService.clearSession();
+  }
+
   confirmShift(): void {
     if (!this.pendingSession) return;
     this.capoturnoSessionService.setSession({
@@ -1496,6 +1538,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.capoturnoShift = session.shift;
       }
     });
+    this.adminSessionService.isLoggedIn().subscribe((v) => { this.adminLoggedIn = v; });
     this.workOrdersSub = this.workOrderService.getWorkOrders().subscribe((orders) => {
       this.allWorkOrders = orders;
     });
