@@ -11,6 +11,7 @@ export interface ICapoturno extends Document {
   name: string;
   nickname: string;
   matricola: string;
+  role?: 'capoturno' | 'admin';
 }
 
 const technicianSchema = new Schema<ITechnician>(
@@ -28,6 +29,7 @@ const capoturnoSchema = new Schema<ICapoturno>(
     name: { type: String, required: true },
     nickname: { type: String, required: true },
     matricola: { type: String, required: true, unique: true },
+    role: { type: String, enum: ['capoturno', 'admin'], default: 'capoturno' },
   },
   { timestamps: true },
 );

@@ -108,7 +108,7 @@ export const getCapoturni = async (req: Request, res: Response) => {
 
 export const createCapoturno = async (req: Request, res: Response) => {
   if (!verifyPassword(req)) return res.status(401).json({ error: 'Password amministratore mancante o errata' });
-  const { name, nickname, matricola } = req.body as Record<string, string>;
+  const { name, nickname, matricola, role } = req.body as Record<string, string>;
   if (!name?.trim() || !matricola?.trim()) {
     return res.status(400).json({ error: 'Payload non valido' });
   }
@@ -117,6 +117,7 @@ export const createCapoturno = async (req: Request, res: Response) => {
       name: name.trim(),
       nickname: nickname?.trim() || name.trim(),
       matricola: matricola.trim(),
+      role: role === 'admin' ? 'admin' : 'capoturno',
     });
     return res.status(201).json({ data: created });
   } catch (error) {
@@ -148,14 +149,19 @@ export const updateCapoturni = async (req: Request, res: Response) => {
 export const updateCapoturno = async (req: Request, res: Response) => {
   if (!verifyPassword(req)) return res.status(401).json({ error: 'Password amministratore mancante o errata' });
   const { id } = req.params;
-  const { name, nickname, matricola } = req.body as Record<string, string>;
+  const { name, nickname, matricola, role } = req.body as Record<string, string>;
   if (!name?.trim() || !matricola?.trim()) {
     return res.status(400).json({ error: 'Payload non valido' });
   }
   try {
     const updated = await Capoturno.findByIdAndUpdate(
       id,
-      { name: name.trim(), nickname: nickname?.trim() || name.trim(), matricola: matricola.trim() },
+      {
+        name: name.trim(),
+        nickname: nickname?.trim() || name.trim(),
+        matricola: matricola.trim(),
+        role: role === 'admin' ? 'admin' : 'capoturno',
+      },
       { new: true },
     ).lean();
     if (!updated) return res.status(404).json({ error: 'Capoturno non trovato' });

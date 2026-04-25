@@ -47,6 +47,7 @@ export const loginCapoturno = async (req: Request, res: Response) => {
         name: capo.name,
         nickname: capo.nickname,
         matricola: capo.matricola,
+        role: (capo.role as string | undefined) ?? 'capoturno',
         message: `Capoturno ${capo.nickname} autenticato.`,
       },
     });

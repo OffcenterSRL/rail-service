@@ -17,6 +17,7 @@ export interface CapoturnoConfig {
   name: string;
   nickname: string;
   matricola: string;
+  role?: 'capoturno' | 'admin';
 }
 
 @Injectable({
@@ -98,6 +99,7 @@ export class AdminConfigService {
       name: capoturno.name,
       nickname: capoturno.nickname,
       matricola: capoturno.matricola,
+      role: capoturno.role ?? 'capoturno',
       id: capoturno.id,
     };
     if (capoturno.id) {

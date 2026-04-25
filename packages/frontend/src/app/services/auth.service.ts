@@ -18,6 +18,7 @@ export interface CapoturnoSession {
   matricola: string;
   shift: string;
   message: string;
+  role?: 'capoturno' | 'admin';
 }
 
 @Injectable({

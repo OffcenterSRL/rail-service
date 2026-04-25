@@ -202,6 +202,13 @@ type UtentiTab = 'capoturni' | 'tecnici';
                       <span class="tc-label">Matricola</span>
                       <input formControlName="matricola" placeholder="Matricola" class="tc-input" />
                     </label>
+                    <label class="tc-field">
+                      <span class="tc-label">Ruolo</span>
+                      <select formControlName="role" class="tc-input" style="cursor:pointer">
+                        <option value="capoturno">Capoturno</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
                   </div>
                   <div class="technician-card-actions">
                     <button type="button" class="btn btn-danger-sm" (click)="removeCapoturno(i)" [disabled]="capoturnoRowDeleting[i]">
@@ -830,6 +837,7 @@ export class AdminComponent implements OnInit {
       name: [capo?.name ?? '', Validators.required],
       nickname: [capo?.nickname ?? '', Validators.required],
       matricola: [capo?.matricola ?? '', Validators.required],
+      role: [capo?.role ?? 'capoturno'],
     });
   }
 

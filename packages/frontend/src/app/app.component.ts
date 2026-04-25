@@ -1,15 +1,14 @@
 import { CommonModule } from '@angular/common';
 import { HttpClientModule } from '@angular/common/http';
 import { Component, inject, OnDestroy, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormArray, FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { APP_VERSION } from './app-version';
-import { AdminComponent } from './components/admin/admin.component';
 import { FlottaToscanaPageComponent } from './components/flotta-toscana/flotta-toscana-page.component';
 import { MaterialsRequestPageComponent } from './components/materials-request/materials-request-page.component';
 import { WorkOrderListComponent } from './components/work-order-list/work-order-list.component';
-import { AdminSessionService } from './services/admin-session.service';
+import { AdminConfigService, CapoturnoConfig, TechnicianConfig } from './services/admin-config.service';
 import { AuthService, CapoturnoSession } from './services/auth.service';
 import { CapoturnoSessionService } from './services/capoturno-session.service';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
@@ -21,17 +20,17 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
   imports: [
     CommonModule,
     FormsModule,
+    ReactiveFormsModule,
     HttpClientModule,
     RouterOutlet,
     WorkOrderListComponent,
-    AdminComponent,
     MaterialsRequestPageComponent,
     FlottaToscanaPageComponent,
   ],
   template: `
     <div class="app-shell">
 
-      <!-- Shift selection modal (shown after login, before entering app) -->
+      <!-- Shift selection modal -->
       <div class="shift-modal-backdrop" *ngIf="showShiftModal">
         <div class="shift-modal">
           <div class="shift-modal-header">
@@ -55,56 +54,97 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         </div>
       </div>
 
-      <header class="header">
-        <div class="header-content">
-          <div class="logo">
-            <span class="logo-icon">🚂</span>
-            <span class="logo-text">HMU SERVICE</span>
-          </div>
-          <div class="header-right">
-            <div class="view-toggle">
-              <button
-                class="view-btn"
-                [class.active]="viewMode === 'capoturno'"
-                (click)="setView('capoturno')"
-              >
-                Capoturno
-              </button>
-              <button
-                class="view-btn"
-                [class.active]="viewMode === 'admin'"
-                (click)="setView('admin')"
-              >
-                Admin
-              </button>
-            </div>
-            <!-- Admin profile avatar -->
-            <div class="profile-wrap" *ngIf="viewMode === 'admin' && adminLoggedIn">
-              <button class="profile-avatar profile-avatar-admin" (click)="toggleAdminDropdown()">ADM</button>
-              <div class="profile-dropdown" *ngIf="adminDropdownOpen">
-                <div class="profile-dropdown-name">Amministratore</div>
-                <hr class="profile-dropdown-divider" />
-                <button class="profile-logout-btn" (click)="logoutAdmin()">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                       stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                    <polyline points="16 17 21 12 16 7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
+      <!-- Backdrop to close profile dropdown -->
+      <div
+        class="profile-backdrop"
+        *ngIf="profileDropdownOpen"
+        (click)="profileDropdownOpen = false"
+      ></div>
+
+      <div class="main-layout">
+        <ng-container *ngIf="capoturnoSession; else capoturnoLogin">
+
+          <!-- Collapsible nav sidebar -->
+          <div class="nav-sidebar">
+            <div class="nav-sidebar-inner">
+              <div class="nav-item" [class.active]="capoturnoSection === 'ordini'" (click)="setCapoturnoSection('ordini')" title="Ordini di lavoro">
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                    <rect x="9" y="3" width="6" height="4" rx="2"/>
+                    <line x1="9" y1="12" x2="15" y2="12"/>
+                    <line x1="9" y1="16" x2="13" y2="16"/>
                   </svg>
-                  Esci
-                </button>
+                </span>
+                <span class="nav-label">Ordini di lavoro</span>
+              </div>
+              <div class="nav-item" [class.active]="capoturnoSection === 'flotta'" (click)="setCapoturnoSection('flotta')" title="Flotta Toscana">
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1" y="6" width="22" height="12" rx="3"/>
+                    <path d="M1 12h22"/>
+                    <circle cx="6" cy="18" r="2"/>
+                    <circle cx="18" cy="18" r="2"/>
+                    <path d="M6 6V4"/>
+                    <path d="M18 6V4"/>
+                    <path d="M4 18h2M18 18h2"/>
+                    <path d="M9 9h6"/>
+                  </svg>
+                </span>
+                <span class="nav-label">Flotta Toscana</span>
+              </div>
+              <div class="nav-item" [class.active]="capoturnoSection === 'materiali'" (click)="setCapoturnoSection('materiali')" title="Richieste materiali">
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                  </svg>
+                </span>
+                <span class="nav-label">Richieste materiali</span>
+              </div>
+              <div class="nav-item" [class.active]="capoturnoSection === 'ti'" (click)="setCapoturnoSection('ti')" title="Richieste TI">
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                  </svg>
+                </span>
+                <span class="nav-label">Richieste TI</span>
+              </div>
+              <div class="nav-item" [class.active]="capoturnoSection === 'scadenze'" (click)="setCapoturnoSection('scadenze')" title="Scadenze">
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </span>
+                <span class="nav-label">Scadenze</span>
+              </div>
+              <!-- Utenti: visible only for admin-role capoturno -->
+              <div class="nav-item nav-item-utenti" *ngIf="capoturnoSession?.role === 'admin'"
+                   [class.active]="capoturnoSection === 'utenti'" (click)="setCapoturnoSection('utenti')" title="Utenti">
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </span>
+                <span class="nav-label">Utenti</span>
               </div>
             </div>
 
-            <!-- Profile avatar + dropdown -->
-            <div
-              class="profile-wrap"
-              *ngIf="viewMode === 'capoturno' && capoturnoSession"
-            >
-              <button class="profile-avatar" (click)="toggleProfileDropdown()">
+            <!-- Profile avatar at sidebar bottom (outside inner to avoid overflow clip) -->
+            <div class="nav-user-area">
+              <button class="nav-user-avatar" (click)="toggleProfileDropdown()" [title]="capoturnoName">
                 {{ getInitials() }}
               </button>
-              <div class="profile-dropdown" *ngIf="profileDropdownOpen">
+              <div class="nav-user-dropdown" *ngIf="profileDropdownOpen">
                 <div class="profile-dropdown-name">{{ capoturnoName }}</div>
                 <div class="profile-dropdown-shift">Turno {{ getShiftLabel(capoturnoShift) }}</div>
                 <hr class="profile-dropdown-divider" />
@@ -120,151 +160,188 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
               </div>
             </div>
           </div>
-        </div>
-      </header>
 
-      <!-- Backdrop to close dropdowns -->
-      <div
-        class="profile-backdrop"
-        *ngIf="profileDropdownOpen || adminDropdownOpen"
-        (click)="profileDropdownOpen = false; adminDropdownOpen = false"
-      ></div>
-
-      <div class="main-layout">
-        <ng-container [ngSwitch]="viewMode">
-          <ng-container *ngSwitchCase="'capoturno'">
-            <ng-container *ngIf="capoturnoSession; else capoturnoLogin">
-              <!-- Collapsible nav sidebar -->
-              <div class="nav-sidebar">
-                <div class="nav-sidebar-inner">
-                  <div class="nav-item" [class.active]="capoturnoSection === 'ordini'" (click)="setCapoturnoSection('ordini')" title="Ordini di lavoro">
-                    <span class="nav-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
-                        <rect x="9" y="3" width="6" height="4" rx="2"/>
-                        <line x1="9" y1="12" x2="15" y2="12"/>
-                        <line x1="9" y1="16" x2="13" y2="16"/>
-                      </svg>
-                    </span>
-                    <span class="nav-label">Ordini di lavoro</span>
+          <!-- Section content -->
+          <ng-container [ngSwitch]="capoturnoSection">
+            <ng-container *ngSwitchCase="'ordini'">
+              <aside class="sidebar">
+                <div class="sidebar-content">
+                  <div class="assigned-header">
+                    <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
                   </div>
-                  <div class="nav-item" [class.active]="capoturnoSection === 'flotta'" (click)="setCapoturnoSection('flotta')" title="Flotta Toscana">
-                    <span class="nav-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="1" y="6" width="22" height="12" rx="3"/>
-                        <path d="M1 12h22"/>
-                        <circle cx="6" cy="18" r="2"/>
-                        <circle cx="18" cy="18" r="2"/>
-                        <path d="M6 6V4"/>
-                        <path d="M18 6V4"/>
-                        <path d="M4 18h2M18 18h2"/>
-                        <path d="M9 9h6"/>
-                      </svg>
-                    </span>
-                    <span class="nav-label">Flotta Toscana</span>
-                  </div>
-                  <div class="nav-item" [class.active]="capoturnoSection === 'materiali'" (click)="setCapoturnoSection('materiali')" title="Richieste materiali">
-                    <span class="nav-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                        <line x1="12" y1="22.08" x2="12" y2="12"/>
-                      </svg>
-                    </span>
-                    <span class="nav-label">Richieste materiali</span>
-                  </div>
-                  <div class="nav-item" [class.active]="capoturnoSection === 'ti'" (click)="setCapoturnoSection('ti')" title="Richieste TI">
-                    <span class="nav-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                        <line x1="8" y1="21" x2="16" y2="21"/>
-                        <line x1="12" y1="17" x2="12" y2="21"/>
-                      </svg>
-                    </span>
-                    <span class="nav-label">Richieste TI</span>
-                  </div>
-                  <div class="nav-item" [class.active]="capoturnoSection === 'scadenze'" (click)="setCapoturnoSection('scadenze')" title="Scadenze">
-                    <span class="nav-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6"/>
-                        <line x1="8" y1="2" x2="8" y2="6"/>
-                        <line x1="3" y1="10" x2="21" y2="10"/>
-                      </svg>
-                    </span>
-                    <span class="nav-label">Scadenze</span>
-                  </div>
+                  <app-work-order-list></app-work-order-list>
                 </div>
-              </div>
-
-              <!-- Section content -->
-              <ng-container [ngSwitch]="capoturnoSection">
-                <ng-container *ngSwitchCase="'ordini'">
-                  <aside class="sidebar">
-                    <div class="sidebar-content">
-                      <div class="assigned-header">
-                        <h2 class="sidebar-title">ORDINI DI LAVORO</h2>
-                      </div>
-                      <app-work-order-list></app-work-order-list>
-                    </div>
-                  </aside>
-                  <main class="main-content">
-                    <router-outlet></router-outlet>
-                  </main>
-                </ng-container>
-                <app-flotta-toscana-page *ngSwitchCase="'flotta'"></app-flotta-toscana-page>
-                <app-materials-request-page *ngSwitchCase="'materiali'"></app-materials-request-page>
-                <div *ngSwitchCase="'ti'" class="section-placeholder">
-                  <div class="placeholder-icon">🖥️</div>
-                  <p class="placeholder-title">Richieste TI</p>
-                  <p class="placeholder-subtitle">Sezione in sviluppo</p>
-                </div>
-                <div *ngSwitchCase="'scadenze'" class="section-placeholder">
-                  <div class="placeholder-icon">📅</div>
-                  <p class="placeholder-title">Scadenze</p>
-                  <p class="placeholder-subtitle">Sezione in sviluppo</p>
-                </div>
-              </ng-container>
+              </aside>
+              <main class="main-content">
+                <router-outlet></router-outlet>
+              </main>
             </ng-container>
-            <ng-template #capoturnoLogin>
-              <div class="tecnico-panel">
-                <div class="panel-shell">
-                  <div class="panel-heading">
-                    <h2>Login Capoturno</h2>
-                    <span class="panel-subtitle">
-                      Accedi con nickname e matricola per gestire gli ordini.
-                    </span>
-                  </div>
-                  <p
-                    *ngIf="capoturnoLoginState"
-                    class="login-message"
-                    [class.success]="capoturnoLoginState.type === 'success'"
-                    [class.error]="capoturnoLoginState.type === 'error'"
-                  >
-                    {{ capoturnoLoginState.message }}
-                  </p>
+            <app-flotta-toscana-page *ngSwitchCase="'flotta'"></app-flotta-toscana-page>
+            <app-materials-request-page *ngSwitchCase="'materiali'"></app-materials-request-page>
+            <div *ngSwitchCase="'ti'" class="section-placeholder">
+              <div class="placeholder-icon">🖥️</div>
+              <p class="placeholder-title">Richieste TI</p>
+              <p class="placeholder-subtitle">Sezione in sviluppo</p>
+            </div>
+            <div *ngSwitchCase="'scadenze'" class="section-placeholder">
+              <div class="placeholder-icon">📅</div>
+              <p class="placeholder-title">Scadenze</p>
+              <p class="placeholder-subtitle">Sezione in sviluppo</p>
+            </div>
+
+            <!-- Utenti (solo admin) -->
+            <div *ngSwitchCase="'utenti'" class="utenti-page">
+              <!-- Password unlock -->
+              <ng-container *ngIf="!utentiUnlocked">
+                <div class="utenti-unlock">
+                  <h3 class="utenti-unlock-title">Gestione Utenti</h3>
+                  <p class="utenti-unlock-sub">Inserisci la password amministratore per continuare.</p>
+                  <p *ngIf="utentiLoginError" class="config-feedback error">{{ utentiLoginError }}</p>
                   <div class="field">
-                    <label>Nickname</label>
-                    <input type="text" [(ngModel)]="capoturnoNickname" placeholder="es. Giulia" />
+                    <label>Password amministratore</label>
+                    <input
+                      type="password"
+                      [(ngModel)]="utentiPassword"
+                      placeholder="Password"
+                      (keydown.enter)="unlockUtenti()"
+                    />
                   </div>
-                  <div class="field">
-                    <label>Matricola</label>
-                    <input type="text" [(ngModel)]="capoturnoMatricola" placeholder="C-2001" />
-                  </div>
-                  <button class="btn btn-primary" (click)="loginCapoturno()">
-                    Accedi come capoturno
+                  <button class="btn btn-primary" (click)="unlockUtenti()" [disabled]="utentiLoginLoading">
+                    {{ utentiLoginLoading ? 'Accesso...' : 'Accedi' }}
                   </button>
                 </div>
-              </div>
-            </ng-template>
-          </ng-container>
+              </ng-container>
 
-          <ng-container *ngSwitchCase="'admin'">
-            <div class="admin-placeholder">
-              <app-admin></app-admin>
+              <!-- Unlocked: CRUD -->
+              <ng-container *ngIf="utentiUnlocked">
+                <div class="utenti-tabs">
+                  <button class="utenti-tab" [class.active]="utentiTab === 'capoturni'" (click)="utentiTab = 'capoturni'">Capoturni</button>
+                  <button class="utenti-tab" [class.active]="utentiTab === 'tecnici'" (click)="utentiTab = 'tecnici'">Tecnici</button>
+                </div>
+                <p *ngIf="utentiError" class="config-feedback error">{{ utentiError }}</p>
+                <p *ngIf="utentiSuccess" class="config-feedback success">{{ utentiSuccess }}</p>
+
+                <!-- Capoturni -->
+                <ng-container *ngIf="utentiTab === 'capoturni'">
+                  <form [formGroup]="capoturniForm">
+                    <div formArrayName="capoturni" class="technicians-grid">
+                      <div *ngFor="let ctrl of capoturniArray.controls; let i = index"
+                           [formGroupName]="i" class="technician-card">
+                        <div class="technician-card-fields">
+                          <label class="tc-field">
+                            <span class="tc-label">Nome</span>
+                            <input formControlName="name" placeholder="Nome capoturno" class="tc-input" />
+                          </label>
+                          <label class="tc-field">
+                            <span class="tc-label">Nickname</span>
+                            <input formControlName="nickname" placeholder="Nickname" class="tc-input" />
+                          </label>
+                          <label class="tc-field">
+                            <span class="tc-label">Matricola</span>
+                            <input formControlName="matricola" placeholder="Matricola" class="tc-input" />
+                          </label>
+                          <label class="tc-field">
+                            <span class="tc-label">Ruolo</span>
+                            <select formControlName="role" class="tc-input tc-select">
+                              <option value="capoturno">Capoturno</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div class="technician-card-actions">
+                          <button type="button" class="btn btn-danger-sm" (click)="removeCapoturnoRow(i)" [disabled]="capoturnoRowDeleting[i]">
+                            {{ capoturnoRowDeleting[i] ? 'Rimozione...' : 'Rimuovi' }}
+                          </button>
+                          <button type="button" class="btn btn-save" (click)="saveCapoturnoRow(i)" [disabled]="capoturnoRowSaving[i] || ctrl.invalid">
+                            {{ capoturnoRowSaving[i] ? 'Salvataggio...' : 'Salva' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div *ngIf="capoturniArray.length === 0" class="technicians-empty">
+                        <p>Nessun capoturno configurato.</p>
+                      </div>
+                    </div>
+                  </form>
+                  <button class="btn btn-ghost" (click)="addCapoturnoRow()">+ Aggiungi capoturno</button>
+                </ng-container>
+
+                <!-- Tecnici -->
+                <ng-container *ngIf="utentiTab === 'tecnici'">
+                  <form [formGroup]="tecniciForm">
+                    <div formArrayName="tecnici" class="technicians-grid">
+                      <div *ngFor="let ctrl of tecniciArray.controls; let i = index"
+                           [formGroupName]="i" class="technician-card">
+                        <div class="technician-card-fields">
+                          <label class="tc-field">
+                            <span class="tc-label">Nome</span>
+                            <input formControlName="name" placeholder="Nome tecnico" class="tc-input" />
+                          </label>
+                          <label class="tc-field">
+                            <span class="tc-label">Nickname</span>
+                            <input formControlName="nickname" placeholder="Nickname" class="tc-input" />
+                          </label>
+                          <label class="tc-field">
+                            <span class="tc-label">Matricola</span>
+                            <input formControlName="matricola" placeholder="Matricola" class="tc-input" />
+                          </label>
+                          <label class="tc-field">
+                            <span class="tc-label">Team</span>
+                            <input formControlName="team" placeholder="Team" class="tc-input" />
+                          </label>
+                        </div>
+                        <div class="technician-card-actions">
+                          <button type="button" class="btn btn-danger-sm" (click)="removeTecnicoRow(i)" [disabled]="tecnicoRowDeleting[i]">
+                            {{ tecnicoRowDeleting[i] ? 'Rimozione...' : 'Rimuovi' }}
+                          </button>
+                          <button type="button" class="btn btn-save" (click)="saveTecnicoRow(i)" [disabled]="tecnicoRowSaving[i] || ctrl.invalid">
+                            {{ tecnicoRowSaving[i] ? 'Salvataggio...' : 'Salva' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div *ngIf="tecniciArray.length === 0" class="technicians-empty">
+                        <p>Nessun tecnico configurato.</p>
+                      </div>
+                    </div>
+                  </form>
+                  <button class="btn btn-ghost" (click)="addTecnicoRow()">+ Aggiungi tecnico</button>
+                </ng-container>
+              </ng-container>
             </div>
           </ng-container>
+
         </ng-container>
+
+        <ng-template #capoturnoLogin>
+          <div class="tecnico-panel">
+            <div class="panel-shell">
+              <div class="panel-heading">
+                <h2>Login Capoturno</h2>
+                <span class="panel-subtitle">
+                  Accedi con nickname e matricola per gestire gli ordini.
+                </span>
+              </div>
+              <p
+                *ngIf="capoturnoLoginState"
+                class="login-message"
+                [class.success]="capoturnoLoginState.type === 'success'"
+                [class.error]="capoturnoLoginState.type === 'error'"
+              >
+                {{ capoturnoLoginState.message }}
+              </p>
+              <div class="field">
+                <label>Nickname</label>
+                <input type="text" [(ngModel)]="capoturnoNickname" placeholder="es. Giulia" />
+              </div>
+              <div class="field">
+                <label>Matricola</label>
+                <input type="text" [(ngModel)]="capoturnoMatricola" placeholder="C-2001" />
+              </div>
+              <button class="btn btn-primary" (click)="loginCapoturno()">
+                Accedi come capoturno
+              </button>
+            </div>
+          </div>
+        </ng-template>
       </div>
       <footer class="app-footer">Versione {{ appVersion }}</footer>
     </div>
@@ -288,319 +365,11 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         overflow-x: hidden;
       }
 
-      .header {
-        background: rgba(16, 18, 30, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 16px 28px;
-        backdrop-filter: blur(14px);
-        position: relative;
-        z-index: 200;
-      }
-
-      .header-content {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .logo {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 20px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-      }
-
-      .logo-icon {
-        font-size: 28px;
-      }
-
-      .logo-text {
-        color: var(--text-primary);
-      }
-
-      .header-right {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .status-pill {
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 6px 14px;
-        border-radius: 999px;
-        font-size: 13px;
-        letter-spacing: 0.4px;
-        text-transform: uppercase;
-      }
-
-      .hero-strip {
-        background: #0b0f1d;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        padding: 18px 26px;
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-        backdrop-filter: blur(15px);
-      }
-
-      .hero-strip-top {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 20px;
-        flex-wrap: wrap;
-      }
-
-      .hero-copy {
-        flex: 1 1 280px;
-        min-height: 1px;
-        min-width: 240px;
-      }
-
-      .hero-label {
-        font-size: 12px;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: var(--text-secondary);
-        margin-bottom: 8px;
-      }
-
-      .hero-copy h1 {
-        font-size: 24px;
-        margin-bottom: 4px;
-      }
-
-      .hero-export {
-        margin-top: 6px;
-        padding: 10px 18px;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        background: rgba(255, 255, 255, 0.08);
-        color: var(--text-primary);
-        font-weight: 600;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.8px;
-        cursor: pointer;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-      }
-
-      .hero-export:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
-      }
-
-      .hero-subtitle {
-        font-size: 13px;
-        color: var(--text-secondary);
-      }
-
-      .hero-metrics {
-        flex: 1 1 320px;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 12px;
-        overflow: hidden;
-      }
-
-      .metric-card {
-        background: rgba(255, 255, 255, 0.04);
-        border-radius: 16px;
-        padding: 12px 14px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        min-width: 90px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .metric-support {
-        font-size: 11px;
-        color: var(--text-muted);
-      }
-
-      .metric-card.accent {
-        background: linear-gradient(180deg, #ff8e3a, #ff5d1e);
-        color: #0b0b0b;
-      }
-
-      .metric-value {
-        font-size: 26px;
-        font-weight: 600;
-      }
-
-      .metric-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: inherit;
-        opacity: 0.85;
-      }
-
-      .view-toggle {
-        display: inline-flex;
-        gap: 6px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.05);
-        padding: 4px;
-      }
-
-      .view-btn {
-        border: none;
-        background: transparent;
-        color: var(--text-secondary);
-        padding: 6px 12px;
-        border-radius: 999px;
-        font-weight: 600;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        transition: all 0.2s ease;
-      }
-
-      .view-btn.active {
-        background: rgba(255, 255, 255, 0.18);
-        color: #fff;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-      }
-
-      .logout-btn {
-        padding: 6px 14px;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 77, 79, 0.5);
-        background: rgba(255, 77, 79, 0.12);
-        color: #ff6b6b;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-      }
-
-      .logout-btn:hover {
-        transform: translateY(-1px);
-        border-color: rgba(255, 77, 79, 0.8);
-        box-shadow: 0 10px 18px rgba(255, 77, 79, 0.25);
-      }
-
-      /* ── Profile avatar + dropdown ── */
-      .profile-wrap {
-        position: relative;
-      }
-
-      .profile-avatar {
-        width: 38px;
-        height: 38px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #7bc7ff, #4b6ef5);
-        color: #02050c;
-        font-size: 13px;
-        font-weight: 800;
-        letter-spacing: 0.5px;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 0 0 2px rgba(123, 199, 255, 0.3);
-        transition: box-shadow 0.15s, transform 0.15s;
-        flex-shrink: 0;
-      }
-
-      .profile-avatar-admin {
-        background: linear-gradient(135deg, #a78bfa, #7c3aed);
-        box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.3);
-        font-size: 11px;
-        letter-spacing: 0.5px;
-      }
-
-      .profile-avatar-admin:hover {
-        box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.5);
-      }
-
-      .profile-avatar:hover {
-        transform: scale(1.06);
-        box-shadow: 0 0 0 3px rgba(123, 199, 255, 0.5);
-      }
-
-      .profile-dropdown {
-        position: absolute;
-        top: calc(100% + 10px);
-        right: 0;
-        background: #0f1625;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 16px;
-        padding: 16px;
-        min-width: 210px;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        z-index: 1500;
-      }
-
-      .profile-dropdown-name {
-        font-size: 14px;
-        font-weight: 700;
-        color: var(--text-primary);
-      }
-
-      .profile-dropdown-shift {
-        font-size: 12px;
-        color: var(--text-secondary);
-      }
-
-      .profile-dropdown-divider {
-        border: none;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        margin: 8px 0 4px;
-      }
-
-      .profile-logout-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(255, 77, 79, 0.1);
-        border: 1px solid rgba(255, 77, 79, 0.3);
-        color: #ff6c6c;
-        border-radius: 10px;
-        padding: 9px 14px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        width: 100%;
-        transition: background 0.15s, border-color 0.15s;
-      }
-
-      .profile-logout-btn:hover {
-        background: rgba(255, 77, 79, 0.18);
-        border-color: rgba(255, 77, 79, 0.55);
-      }
-
-      .profile-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 100;
-      }
-
-      .tecnico-login {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
       .tecnico-panel {
         display: flex;
         align-items: stretch;
         justify-content: center;
-        min-height: calc(100vh - 200px);
+        min-height: calc(100vh - 100px);
         padding: 0 24px;
         width: 100%;
       }
@@ -689,12 +458,6 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
       .panel-shell .btn-primary:hover {
         transform: translateY(-1px);
         box-shadow: 0 14px 34px rgba(75, 110, 245, 0.35);
-      }
-
-      .panel-shell .btn-tertiary {
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        color: var(--text-primary);
       }
 
       /* ── Shift selection modal ── */
@@ -808,13 +571,10 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         box-shadow: 0 16px 36px rgba(75, 110, 245, 0.45);
       }
 
-      .assigned-tasks {
-        margin-top: 18px;
-        border-top: 1px dashed rgba(255, 255, 255, 0.25);
-        padding-top: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+      .profile-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 15;
       }
 
       .assigned-header {
@@ -822,210 +582,6 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-      }
-
-      .assigned-actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .assigned-task {
-        background: rgba(255, 255, 255, 0.04);
-        border-radius: 14px;
-        padding: 12px 14px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        cursor: pointer;
-        transition: border-color 0.2s ease, transform 0.2s ease;
-      }
-
-      .assigned-task.active {
-        border-color: rgba(123, 199, 255, 0.6);
-        box-shadow: 0 12px 24px rgba(75, 110, 245, 0.2);
-        transform: translateY(-1px);
-      }
-
-      .assigned-task-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .task-order {
-        font-size: 13px;
-        letter-spacing: 0.5px;
-        color: var(--text-secondary);
-      }
-
-      .task-status-pill {
-        font-size: 11px;
-        background: rgba(124, 199, 255, 0.2);
-        color: var(--text-primary);
-        padding: 4px 10px;
-        border-radius: 999px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-
-      .task-compile-card {
-        margin-top: 16px;
-        background: rgba(15, 18, 32, 0.9);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .compile-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 12px;
-        color: var(--text-secondary);
-        font-size: 12px;
-      }
-
-      .status-pill {
-        font-size: 11px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        font-weight: 600;
-        color: var(--text-primary);
-      }
-
-      .status-pill.aperta {
-        background: rgba(255, 124, 45, 0.18);
-        color: #ff9d5c;
-      }
-
-      .status-pill.in_progress {
-        background: rgba(124, 199, 255, 0.16);
-        color: #7bc7ff;
-      }
-
-      .status-pill.risolte {
-        background: rgba(130, 255, 169, 0.16);
-        color: #82ffa9;
-      }
-
-      .compile-header h4 {
-        margin: 0;
-        color: var(--text-primary);
-        font-size: 16px;
-      }
-
-      .compile-field {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        font-size: 12px;
-        color: var(--text-secondary);
-      }
-
-      .compile-field input {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 10px;
-        color: var(--text-primary);
-        padding: 10px 12px;
-      }
-
-      .compile-time {
-        display: flex;
-        gap: 10px;
-      }
-
-      .compile-time select {
-        flex: 1;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 10px;
-        color: var(--text-primary);
-        padding: 10px 12px;
-      }
-
-      .compile-technicians {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-
-      .compile-tech-row {
-        display: grid;
-        grid-template-columns: minmax(200px, 1fr) minmax(140px, 1fr) auto;
-        gap: 10px;
-        align-items: center;
-      }
-
-      .compile-tech-row select {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 10px;
-        color: var(--text-primary);
-        padding: 8px 10px;
-      }
-
-      .tech-matricola {
-        font-size: 12px;
-        color: var(--text-secondary);
-      }
-
-      .compile-actions {
-        display: flex;
-        justify-content: flex-end;
-      }
-
-      .task-description {
-        font-size: 14px;
-        color: var(--text-primary);
-        margin: 0;
-      }
-
-      .task-priority {
-        font-size: 11px;
-        letter-spacing: 0.4px;
-        text-transform: uppercase;
-        color: #fff;
-        padding: 2px 10px;
-        border-radius: 999px;
-        align-self: flex-start;
-      }
-
-      .task-priority.preventiva {
-        background: rgba(90, 176, 255, 0.7);
-      }
-
-      .task-priority.correttiva {
-        background: rgba(255, 144, 65, 0.7);
-      }
-
-      .task-priority.urgente {
-        background: rgba(255, 77, 79, 0.8);
-      }
-
-      .task-empty {
-        border: 1px dashed rgba(255, 255, 255, 0.3);
-        border-radius: 14px;
-        padding: 12px 14px;
-        color: var(--text-secondary);
-        font-size: 13px;
-      }
-
-      .assigned-controls input {
-        width: 100%;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: var(--text-primary);
-        border-radius: 10px;
-        padding: 8px 12px;
       }
 
       .app-footer {
@@ -1041,10 +597,6 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         flex: 1;
         gap: 16px;
         min-height: 0;
-      }
-
-      .admin-placeholder {
-        display: contents;
       }
 
       /* ── Collapsible nav sidebar ── */
@@ -1106,6 +658,11 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         filter: drop-shadow(0 0 6px rgba(123, 199, 255, 0.55));
       }
 
+      .nav-item-utenti.active .nav-icon {
+        color: #a78bfa;
+        filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.55));
+      }
+
       .nav-icon {
         flex-shrink: 0;
         width: 22px;
@@ -1132,6 +689,92 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
 
       .nav-sidebar-inner:hover .nav-label {
         opacity: 1;
+      }
+
+      /* ── Nav user avatar (bottom of sidebar) ── */
+      .nav-user-area {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        z-index: 30;
+      }
+
+      .nav-user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #7bc7ff, #4b6ef5);
+        color: #02050c;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 0 2px rgba(123, 199, 255, 0.3);
+        transition: box-shadow 0.15s, transform 0.15s;
+        flex-shrink: 0;
+      }
+
+      .nav-user-avatar:hover {
+        transform: scale(1.06);
+        box-shadow: 0 0 0 3px rgba(123, 199, 255, 0.5);
+      }
+
+      .nav-user-dropdown {
+        position: absolute;
+        left: 48px;
+        bottom: 0;
+        background: #0f1625;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 16px;
+        min-width: 210px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        z-index: 1500;
+      }
+
+      .profile-dropdown-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .profile-dropdown-shift {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .profile-dropdown-divider {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        margin: 8px 0 4px;
+      }
+
+      .profile-logout-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 77, 79, 0.1);
+        border: 1px solid rgba(255, 77, 79, 0.3);
+        color: #ff6c6c;
+        border-radius: 10px;
+        padding: 9px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        width: 100%;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .profile-logout-btn:hover {
+        background: rgba(255, 77, 79, 0.18);
+        border-color: rgba(255, 77, 79, 0.55);
       }
 
       /* ── Section placeholder ── */
@@ -1202,6 +845,220 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         overflow-y: auto;
       }
 
+      /* ── Utenti page ── */
+      .utenti-page {
+        flex: 1;
+        background: rgba(9, 13, 26, 0.92);
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 24px;
+        box-shadow: var(--glass-shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        overflow-y: auto;
+      }
+
+      .utenti-unlock {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 440px;
+      }
+
+      .utenti-unlock-title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .utenti-unlock-sub {
+        margin: 0;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      .utenti-tabs {
+        display: flex;
+        gap: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding-bottom: 14px;
+      }
+
+      .utenti-tab {
+        padding: 8px 20px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .utenti-tab.active {
+        background: rgba(167, 139, 250, 0.15);
+        border-color: rgba(167, 139, 250, 0.5);
+        color: #a78bfa;
+      }
+
+      .utenti-tab:not(.active):hover {
+        border-color: rgba(255, 255, 255, 0.2);
+        color: var(--text-primary);
+      }
+
+      .config-feedback {
+        font-size: 12px;
+        border-radius: 10px;
+        padding: 8px 12px;
+        margin: 0;
+      }
+
+      .config-feedback.error {
+        background: rgba(255, 77, 79, 0.12);
+        color: #ff6b6b;
+      }
+
+      .config-feedback.success {
+        background: rgba(76, 175, 80, 0.12);
+        color: #82ffa9;
+      }
+
+      .technicians-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 14px;
+      }
+
+      .technician-card {
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 16px;
+        background: rgba(18, 22, 42, 0.85);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .technician-card-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .tc-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .tc-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+      }
+
+      .tc-input {
+        border-radius: 10px;
+        background: rgba(17, 22, 35, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+        padding: 9px 12px;
+        font-size: 13px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .tc-select {
+        cursor: pointer;
+      }
+
+      .technician-card-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .technicians-empty {
+        grid-column: 1 / -1;
+        padding: 24px;
+        border-radius: 14px;
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      .btn {
+        font-size: 13px;
+        font-weight: 600;
+        border-radius: 999px;
+        padding: 10px 20px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .btn-primary {
+        background: linear-gradient(180deg, #7bc7ff, #4b6ef5);
+        color: #02050c;
+        border: none;
+        box-shadow: 0 12px 32px rgba(75, 110, 245, 0.35);
+        width: fit-content;
+        padding: 14px 28px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .btn-primary:hover:not([disabled]) {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 34px rgba(75, 110, 245, 0.45);
+      }
+
+      .btn-primary[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .btn-ghost {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text-secondary);
+        border-color: rgba(255, 255, 255, 0.2);
+        align-self: flex-start;
+      }
+
+      .btn-ghost:hover {
+        border-color: rgba(167, 139, 250, 0.5);
+        color: #a78bfa;
+      }
+
+      .btn-save {
+        background: linear-gradient(180deg, #7bc7ff, #4b6ef5);
+        color: #030712;
+        border: none;
+        flex: 1;
+      }
+
+      .btn-save:hover:not([disabled]) { transform: translateY(-1px); }
+      .btn-save[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+      .btn-danger-sm {
+        background: rgba(255, 77, 79, 0.08);
+        color: #ff6b6b;
+        border-color: rgba(255, 77, 79, 0.3);
+      }
+
+      .btn-danger-sm:hover:not([disabled]) {
+        background: rgba(255, 77, 79, 0.16);
+        border-color: rgba(255, 77, 79, 0.5);
+      }
+
+      .btn-danger-sm[disabled] { opacity: 0.45; cursor: not-allowed; }
+
       @media (max-width: 1100px) {
         .main-layout {
           flex-direction: column;
@@ -1215,45 +1072,12 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
       }
 
       @media (max-width: 1024px) {
-        body {
-          padding: 0 16px;
-        }
-
-        .hero-strip {
-          flex-direction: column;
-          align-items: flex-start;
-        }
-
-        .hero-metrics {
-          justify-content: flex-start;
-        }
-
         .main-content {
           padding: 24px;
         }
       }
 
       @media (max-width: 768px) {
-        body {
-          padding: 0 10px;
-        }
-
-        .hero-strip {
-          padding: 16px;
-        }
-
-        .header {
-          padding: 12px 18px;
-        }
-
-        .hero-copy h1 {
-          font-size: 22px;
-        }
-
-        .hero-metrics {
-          justify-content: flex-start;
-        }
-
         .main-content {
           padding: 20px;
         }
@@ -1268,141 +1092,12 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
       }
 
       @media (max-width: 600px) {
-        .header-content {
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 10px;
-        }
-
-        .header-right {
-          width: 100%;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .header .status-pill {
-          display: none;
-        }
-
-        .view-toggle {
-          flex: 1;
-        }
-
-        .view-btn {
-          flex: 1;
-          padding: 6px 6px;
-          font-size: 11px;
-        }
-
-        .logout-btn {
-          margin-left: auto;
-        }
-
-        .hero-strip {
-          flex-direction: column;
-          min-height: auto;
-        }
-
-        .hero-copy h1 {
-          font-size: 19px;
-        }
-
-        .hero-metrics {
-          width: 100%;
-          justify-content: space-between;
-        }
-
-        .metric-card {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .metric-value {
-          font-size: 20px;
-        }
-
-        .main-layout {
-          gap: 10px;
-        }
-
-        .sidebar {
-          padding: 10px 0;
-          border-radius: 16px;
-        }
-
-        .main-content {
-          border-radius: 16px;
-          padding: 14px;
-        }
-
-        .panel-shell {
-          padding: 16px 14px;
-          gap: 14px;
-          border-radius: 20px;
-        }
-
-        .panel-shell .btn {
-          width: 100%;
-          text-align: center;
-        }
-
-        .panel-heading h2 {
-          font-size: 22px;
-        }
-
-        .tecnico-panel {
-          padding: 0;
-          min-height: auto;
-        }
-
-        .compile-tech-row {
-          grid-template-columns: 1fr;
-        }
-
-        .task-compile-card {
-          padding: 14px;
-        }
-
-        .login-card {
-          padding: 20px;
-        }
-
         .app-footer {
           text-align: center;
         }
       }
 
       @media (max-width: 420px) {
-        body {
-          padding: 0 6px;
-        }
-
-        .header {
-          padding: 10px 14px;
-          border-radius: 14px;
-        }
-
-        .logo {
-          font-size: 17px;
-        }
-
-        .logo-icon {
-          font-size: 22px;
-        }
-
-        .hero-copy h1 {
-          font-size: 17px;
-        }
-
-        .hero-strip {
-          padding: 14px;
-          border-radius: 16px;
-        }
-
-        .metric-value {
-          font-size: 18px;
-        }
-
         .sidebar-content {
           padding: 10px 14px;
         }
@@ -1411,8 +1106,7 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
   ],
 })
 export class AppComponent implements OnInit, OnDestroy {
-  viewMode: 'capoturno' | 'admin' = 'capoturno';
-  capoturnoSection: 'ordini' | 'materiali' | 'ti' | 'scadenze' | 'flotta' = 'ordini';
+  capoturnoSection: 'ordini' | 'materiali' | 'ti' | 'scadenze' | 'flotta' | 'utenti' = 'ordini';
   capoturnoSession: CapoturnoSession | null = null;
   selectedWorkOrder: WorkOrder | null = null;
   capoturnoName = 'Capoturno';
@@ -1427,8 +1121,6 @@ export class AppComponent implements OnInit, OnDestroy {
   capoturnoLoginState: { type: 'success' | 'error'; message: string } | null = null;
   showShiftModal = false;
   profileDropdownOpen = false;
-  adminDropdownOpen = false;
-  adminLoggedIn = false;
   private pendingSession: CapoturnoSession | null = null;
   allWorkOrders: WorkOrder[] = [];
   appVersion = APP_VERSION;
@@ -1440,36 +1132,224 @@ export class AppComponent implements OnInit, OnDestroy {
     cancelledTickets: 0,
     lastUpdated: new Date().toISOString(),
   };
+
+  // Utenti section state
+  utentiPassword = '';
+  utentiUnlocked = false;
+  utentiLoginError: string | null = null;
+  utentiLoginLoading = false;
+  utentiTab: 'capoturni' | 'tecnici' = 'capoturni';
+  utentiError: string | null = null;
+  utentiSuccess: string | null = null;
+  capoturniForm: FormGroup;
+  tecniciForm: FormGroup;
+  capoturnoRowSaving: Record<number, boolean> = {};
+  capoturnoRowDeleting: Record<number, boolean> = {};
+  tecnicoRowSaving: Record<number, boolean> = {};
+  tecnicoRowDeleting: Record<number, boolean> = {};
+  private utentiCurrentPassword = '';
+  private readonly utentiStorageKey = 'rail-service.admin-password';
+
   private dashboardService = inject(DashboardService);
   private authService = inject(AuthService);
   private capoturnoSessionService = inject(CapoturnoSessionService);
-  private adminSessionService = inject(AdminSessionService);
   private workOrderService = inject(WorkOrderService);
+  private adminConfigService = inject(AdminConfigService);
   private router = inject(Router);
+  private fb = inject(FormBuilder);
   private workOrdersSub?: Subscription;
   private selectedWorkOrderSub?: Subscription;
-  private readonly viewModeStorageKey = 'rail-service.view-mode';
 
-  setView(mode: 'capoturno' | 'admin'): void {
-    this.applyViewMode(mode);
+  constructor() {
+    this.capoturniForm = this.fb.group({ capoturni: this.fb.array([]) });
+    this.tecniciForm = this.fb.group({ tecnici: this.fb.array([]) });
   }
 
-  setCapoturnoSection(section: 'ordini' | 'materiali' | 'ti' | 'scadenze' | 'flotta'): void {
+  get capoturniArray(): FormArray {
+    return this.capoturniForm.get('capoturni') as FormArray;
+  }
+
+  get tecniciArray(): FormArray {
+    return this.tecniciForm.get('tecnici') as FormArray;
+  }
+
+  setCapoturnoSection(section: typeof this.capoturnoSection): void {
     this.capoturnoSection = section;
+    if (section === 'utenti') {
+      this.tryAutoUnlockUtenti();
+    }
   }
 
-  private applyViewMode(
-    mode: 'capoturno' | 'admin',
-    options?: { persist?: boolean; skipRouter?: boolean },
-  ): void {
-    this.viewMode = mode;
-    if (options?.persist !== false) {
-      this.persistViewMode(mode);
-    }
-    if (options?.skipRouter !== true && mode !== 'admin') {
-      this.router.navigateByUrl('/');
-    }
+  private tryAutoUnlockUtenti(): void {
+    if (this.utentiUnlocked) return;
+    try {
+      const stored = localStorage.getItem(this.utentiStorageKey);
+      if (stored) {
+        this.utentiPassword = stored;
+        this.unlockUtenti();
+      }
+    } catch { /* ignore */ }
   }
+
+  unlockUtenti(): void {
+    if (!this.utentiPassword) {
+      this.utentiLoginError = 'Inserisci la password amministratore.';
+      return;
+    }
+    this.utentiLoginLoading = true;
+    this.utentiLoginError = null;
+    this.adminConfigService.getCapoturni(this.utentiPassword).subscribe({
+      next: (capoturni) => {
+        this.utentiCurrentPassword = this.utentiPassword;
+        try { localStorage.setItem(this.utentiStorageKey, this.utentiPassword); } catch { /* ignore */ }
+        this.utentiUnlocked = true;
+        this.utentiLoginLoading = false;
+        this.setCapoturniList(capoturni);
+        this.loadTecnici();
+      },
+      error: (err) => {
+        this.utentiLoginLoading = false;
+        this.utentiLoginError = err?.error?.error ?? 'Password errata o servizio non raggiungibile.';
+      },
+    });
+  }
+
+  private loadTecnici(): void {
+    this.adminConfigService.getTechnicians(this.utentiCurrentPassword).subscribe({
+      next: (tecnici) => this.setTecniciList(tecnici),
+      error: () => { /* non critico */ },
+    });
+  }
+
+  // ── Capoturni CRUD ──────────────────────────────────────────────────────
+
+  addCapoturnoRow(): void {
+    this.capoturniArray.push(this.buildCapoturnoGroup());
+  }
+
+  saveCapoturnoRow(index: number): void {
+    const ctrl = this.capoturniArray.at(index);
+    if (!ctrl || ctrl.invalid) { ctrl?.markAllAsTouched(); return; }
+    this.capoturnoRowSaving = { ...this.capoturnoRowSaving, [index]: true };
+    this.adminConfigService.saveCapoturno(this.utentiCurrentPassword, ctrl.value as CapoturnoConfig).subscribe({
+      next: (saved) => {
+        ctrl.patchValue(saved);
+        this.utentiSuccess = `Capoturno ${saved.name} salvato`;
+        this.utentiError = null;
+        const { [index]: _, ...rest } = this.capoturnoRowSaving;
+        this.capoturnoRowSaving = rest;
+      },
+      error: (err) => {
+        this.utentiError = err?.error?.error ?? 'Errore salvataggio';
+        this.utentiSuccess = null;
+        const { [index]: _, ...rest } = this.capoturnoRowSaving;
+        this.capoturnoRowSaving = rest;
+      },
+    });
+  }
+
+  removeCapoturnoRow(index: number): void {
+    const ctrl = this.capoturniArray.at(index);
+    const name = ctrl?.get('name')?.value ?? 'questo capoturno';
+    if (!window.confirm(`Confermi la rimozione di ${name}?`)) return;
+    const id = ctrl?.get('id')?.value;
+    if (!id) { this.capoturniArray.removeAt(index); return; }
+    this.capoturnoRowDeleting = { ...this.capoturnoRowDeleting, [index]: true };
+    this.adminConfigService.deleteCapoturno(this.utentiCurrentPassword, id).subscribe({
+      next: (list) => {
+        this.utentiSuccess = 'Capoturno rimosso';
+        this.utentiError = null;
+        this.setCapoturniList(list);
+      },
+      error: (err) => {
+        this.utentiError = err?.error?.error ?? 'Errore rimozione';
+        this.utentiSuccess = null;
+        const { [index]: _, ...rest } = this.capoturnoRowDeleting;
+        this.capoturnoRowDeleting = rest;
+      },
+    });
+  }
+
+  private buildCapoturnoGroup(capo?: CapoturnoConfig): FormGroup {
+    return this.fb.group({
+      id: [capo?.id ?? ''],
+      name: [capo?.name ?? '', Validators.required],
+      nickname: [capo?.nickname ?? '', Validators.required],
+      matricola: [capo?.matricola ?? '', Validators.required],
+      role: [capo?.role ?? 'capoturno'],
+    });
+  }
+
+  private setCapoturniList(list: CapoturnoConfig[]): void {
+    while (this.capoturniArray.length) this.capoturniArray.removeAt(0);
+    list.forEach((c) => this.capoturniArray.push(this.buildCapoturnoGroup(c)));
+  }
+
+  // ── Tecnici CRUD ────────────────────────────────────────────────────────
+
+  addTecnicoRow(): void {
+    this.tecniciArray.push(this.buildTecnicoGroup());
+  }
+
+  saveTecnicoRow(index: number): void {
+    const ctrl = this.tecniciArray.at(index);
+    if (!ctrl || ctrl.invalid) { ctrl?.markAllAsTouched(); return; }
+    this.tecnicoRowSaving = { ...this.tecnicoRowSaving, [index]: true };
+    this.adminConfigService.saveTechnician(this.utentiCurrentPassword, ctrl.value as TechnicianConfig).subscribe({
+      next: (saved) => {
+        ctrl.patchValue(saved);
+        this.utentiSuccess = `Tecnico ${saved.name} salvato`;
+        this.utentiError = null;
+        const { [index]: _, ...rest } = this.tecnicoRowSaving;
+        this.tecnicoRowSaving = rest;
+      },
+      error: (err) => {
+        this.utentiError = err?.error?.error ?? 'Errore salvataggio';
+        this.utentiSuccess = null;
+        const { [index]: _, ...rest } = this.tecnicoRowSaving;
+        this.tecnicoRowSaving = rest;
+      },
+    });
+  }
+
+  removeTecnicoRow(index: number): void {
+    const ctrl = this.tecniciArray.at(index);
+    const name = ctrl?.get('name')?.value ?? 'questo tecnico';
+    if (!window.confirm(`Confermi la rimozione di ${name}?`)) return;
+    const id = ctrl?.get('id')?.value;
+    if (!id) { this.tecniciArray.removeAt(index); return; }
+    this.tecnicoRowDeleting = { ...this.tecnicoRowDeleting, [index]: true };
+    this.adminConfigService.deleteTechnician(this.utentiCurrentPassword, id).subscribe({
+      next: (list) => {
+        this.utentiSuccess = 'Tecnico rimosso';
+        this.utentiError = null;
+        this.setTecniciList(list);
+      },
+      error: (err) => {
+        this.utentiError = err?.error?.error ?? 'Errore rimozione';
+        this.utentiSuccess = null;
+        const { [index]: _, ...rest } = this.tecnicoRowDeleting;
+        this.tecnicoRowDeleting = rest;
+      },
+    });
+  }
+
+  private buildTecnicoGroup(t?: TechnicianConfig): FormGroup {
+    return this.fb.group({
+      id: [t?.id ?? ''],
+      name: [t?.name ?? '', Validators.required],
+      nickname: [t?.nickname ?? '', Validators.required],
+      matricola: [t?.matricola ?? '', Validators.required],
+      team: [t?.team ?? '', Validators.required],
+    });
+  }
+
+  private setTecniciList(list: TechnicianConfig[]): void {
+    while (this.tecniciArray.length) this.tecniciArray.removeAt(0);
+    list.forEach((t) => this.tecniciArray.push(this.buildTecnicoGroup(t)));
+  }
+
+  // ── Capoturno login / session ────────────────────────────────────────────
 
   loginCapoturno(): void {
     if (!this.capoturnoNickname || !this.capoturnoMatricola) {
@@ -1508,15 +1388,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.profileDropdownOpen = !this.profileDropdownOpen;
   }
 
-  toggleAdminDropdown(): void {
-    this.adminDropdownOpen = !this.adminDropdownOpen;
-  }
-
-  logoutAdmin(): void {
-    this.adminDropdownOpen = false;
-    this.adminSessionService.clearSession();
-  }
-
   confirmShift(): void {
     if (!this.pendingSession) return;
     this.capoturnoSessionService.setSession({
@@ -1529,7 +1400,6 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.restoreViewMode();
     this.loadDashboardStats();
     this.capoturnoSessionService.getSession().subscribe((session) => {
       this.capoturnoSession = session;
@@ -1538,7 +1408,6 @@ export class AppComponent implements OnInit, OnDestroy {
         this.capoturnoShift = session.shift;
       }
     });
-    this.adminSessionService.isLoggedIn().subscribe((v) => { this.adminLoggedIn = v; });
     this.workOrdersSub = this.workOrderService.getWorkOrders().subscribe((orders) => {
       this.allWorkOrders = orders;
     });
@@ -1757,32 +1626,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.capoturnoMatricola = '';
     this.capoturnoShift = this.capoturnoShiftOptions[0];
     this.capoturnoLoginState = { type: 'success', message: 'Logout completato.' };
-  }
-
-  private restoreViewMode(): void {
-    const stored = this.readStoredViewMode();
-    if (!stored) {
-      return;
-    }
-    this.applyViewMode(stored, { persist: false, skipRouter: true });
-  }
-
-  private persistViewMode(mode: 'capoturno' | 'admin'): void {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    window.localStorage.setItem(this.viewModeStorageKey, mode);
-  }
-
-  private readStoredViewMode(): 'capoturno' | 'admin' | null {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    const stored = window.localStorage.getItem(this.viewModeStorageKey);
-    if (stored === 'capoturno' || stored === 'admin') {
-      return stored;
-    }
-    return null;
+    // Reset utenti section on logout
+    this.utentiUnlocked = false;
+    this.utentiPassword = '';
+    this.utentiCurrentPassword = '';
+    while (this.capoturniArray.length) this.capoturniArray.removeAt(0);
+    while (this.tecniciArray.length) this.tecniciArray.removeAt(0);
   }
 
   ngOnDestroy(): void {
