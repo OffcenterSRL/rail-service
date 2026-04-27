@@ -13,6 +13,7 @@ import { AuthService, CapoturnoSession } from './services/auth.service';
 import { CapoturnoSessionService } from './services/capoturno-session.service';
 import { DashboardService, DashboardStats } from './services/dashboard.service';
 import { Task, WorkOrder, WorkOrderService } from './services/work-order.service';
+import { ThemeService, ThemeName } from './services/theme.service';
 
 @Component({
   selector: 'app-root',
@@ -147,6 +148,26 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
               <div class="nav-user-dropdown" *ngIf="profileDropdownOpen">
                 <div class="profile-dropdown-name">{{ capoturnoName }}</div>
                 <div class="profile-dropdown-shift">Turno {{ getShiftLabel(capoturnoShift) }}</div>
+                <hr class="profile-dropdown-divider" />
+                <button class="profile-theme-btn" (click)="toggleTheme()">
+                  <svg *ngIf="currentTheme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                  <svg *ngIf="currentTheme === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                  {{ currentTheme === 'dark' ? 'Tema chiaro' : 'Tema scuro' }}
+                </button>
                 <hr class="profile-dropdown-divider" />
                 <button class="profile-logout-btn" (click)="logoutCapoturno()">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -756,6 +777,31 @@ import { Task, WorkOrder, WorkOrderService } from './services/work-order.service
         margin: 8px 0 4px;
       }
 
+      .profile-theme-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(123, 199, 255, 0.1);
+        border: 1px solid rgba(123, 199, 255, 0.3);
+        color: #7bc7ff;
+        border-radius: 10px;
+        padding: 9px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        width: 100%;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .profile-theme-btn:hover {
+        background: rgba(123, 199, 255, 0.18);
+        border-color: rgba(123, 199, 255, 0.55);
+      }
+
+      .profile-theme-btn svg {
+        flex-shrink: 0;
+      }
+
       .profile-logout-btn {
         display: inline-flex;
         align-items: center;
@@ -1121,6 +1167,7 @@ export class AppComponent implements OnInit, OnDestroy {
   capoturnoLoginState: { type: 'success' | 'error'; message: string } | null = null;
   showShiftModal = false;
   profileDropdownOpen = false;
+  currentTheme: ThemeName = 'dark';
   private pendingSession: CapoturnoSession | null = null;
   allWorkOrders: WorkOrder[] = [];
   appVersion = APP_VERSION;
@@ -1155,10 +1202,12 @@ export class AppComponent implements OnInit, OnDestroy {
   private capoturnoSessionService = inject(CapoturnoSessionService);
   private workOrderService = inject(WorkOrderService);
   private adminConfigService = inject(AdminConfigService);
+  private themeService = inject(ThemeService);
   private router = inject(Router);
   private fb = inject(FormBuilder);
   private workOrdersSub?: Subscription;
   private selectedWorkOrderSub?: Subscription;
+  private themeSub?: Subscription;
 
   constructor() {
     this.capoturniForm = this.fb.group({ capoturni: this.fb.array([]) });
@@ -1388,6 +1437,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.profileDropdownOpen = !this.profileDropdownOpen;
   }
 
+  toggleTheme(): void {
+    const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+    this.themeService.setTheme(newTheme);
+  }
+
   confirmShift(): void {
     if (!this.pendingSession) return;
     this.capoturnoSessionService.setSession({
@@ -1401,6 +1455,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadDashboardStats();
+    this.themeSub = this.themeService.currentTheme$.subscribe((theme) => {
+      this.currentTheme = theme;
+    });
     this.capoturnoSessionService.getSession().subscribe((session) => {
       this.capoturnoSession = session;
       this.capoturnoName = session?.name ?? 'Capoturno';
@@ -1637,5 +1694,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.workOrdersSub?.unsubscribe();
     this.selectedWorkOrderSub?.unsubscribe();
+    this.themeSub?.unsubscribe();
   }
 }
